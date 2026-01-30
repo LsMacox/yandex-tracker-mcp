@@ -487,7 +487,9 @@ For other MCP-compatible clients, use the standard MCP server configuration form
 
 The server exposes the following tools through the MCP protocol:
 
-### Queue Management
+<details>
+<summary><strong>Queue Management</strong></summary>
+
 - **`queues_get_all`**: List all available Yandex Tracker queues
   - Parameters:
     - `fields` (optional): Fields to include in the response (e.g., ["key", "name"]). Helps optimize context window usage by selecting only needed fields. If not specified, returns all available fields.
@@ -524,7 +526,11 @@ The server exposes the following tools through the MCP protocol:
   - Use `expand: ["issueTypesConfig"]` to get available resolutions for each issue type (needed for `issue_close` tool)
   - Respects `TRACKER_LIMIT_QUEUES` restrictions
 
-### User Management
+</details>
+
+<details>
+<summary><strong>User Management</strong></summary>
+
 - **`users_get_all`**: Get information about user accounts registered in the organization
   - Parameters:
     - `per_page` (optional): Number of users per page (default: 50)
@@ -548,12 +554,20 @@ The server exposes the following tools through the MCP protocol:
   - Uses fuzzy matching for real names with a similarity threshold of 80%
   - Prioritizes exact matches for login and email over fuzzy name matches
 
-### Field Management
+</details>
+
+<details>
+<summary><strong>Field Management</strong></summary>
+
 - **`get_global_fields`**: Get all global fields available in Yandex Tracker
   - Returns complete list of global fields that can be used in issues
   - Includes field schema, type information, and configuration
 
-### Status and Type Management
+</details>
+
+<details>
+<summary><strong>Status and Type Management</strong></summary>
+
 - **`get_statuses`**: Get all available issue statuses
   - Returns complete list of issue statuses that can be assigned
   - Includes status IDs, names, and type information
@@ -570,7 +584,11 @@ The server exposes the following tools through the MCP protocol:
   - Returns complete list of resolutions that can be used when closing issues
   - Includes resolution keys, names, descriptions, and order information
 
-### Issue Operations
+</details>
+
+<details>
+<summary><strong>Issue Operations</strong></summary>
+
 - **`issue_get`**: Retrieve detailed issue information by ID
   - Parameters:
     - `issue_id` (string, format: "QUEUE-123")
@@ -683,7 +701,11 @@ The server exposes the following tools through the MCP protocol:
   - Only provided fields are updated; omitted fields remain unchanged
   - Respects `TRACKER_LIMIT_QUEUES` restrictions
 
-### Search and Discovery
+</details>
+
+<details>
+<summary><strong>Search and Discovery</strong></summary>
+
 - **`issues_find`**: Search issues using [Yandex Tracker Query Language](https://yandex.ru/support/tracker/ru/user/query-filter)
   - Parameters:
     - `query` (required): Query string using Yandex Tracker Query Language syntax
@@ -700,6 +722,7 @@ The server exposes the following tools through the MCP protocol:
   - Supports all query language features: field filtering, date functions, logical operators, and complex expressions
   - Useful for analytics, reporting, and understanding issue distribution without retrieving full issue data
 
+</details>
 
 ## http Transport
 
