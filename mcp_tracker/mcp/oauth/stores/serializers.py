@@ -30,7 +30,7 @@ class EncryptedFieldSerializer(PydanticJsonSerializer):
         super().__init__()
         self._encryptor = encryptor
 
-    def dumps(self, value: Any) -> bytes:  # ty: ignore[invalid-method-override]
+    def dumps(self, value: Any) -> bytes:
         data = value.model_dump(mode="json") if isinstance(value, BaseModel) else value
         if self._encryptor is not None and isinstance(data, dict):
             data = self._encrypt_fields(data)
