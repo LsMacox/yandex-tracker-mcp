@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.3] - 2026-02-08
+
+### Features
+- Add `issue_add_comment` MCP tool to add comments to issues with support for summonees, mailing lists, and YFM markup
+- Add `issue_update_comment` MCP tool to update existing comments in issues
+- Add `issue_delete_comment` MCP tool to delete comments from issues
+
+### Internal
+- Update dependencies
+
 ## [0.6.2] - 2026-01-30
 
 ### Features
