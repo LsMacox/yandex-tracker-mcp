@@ -485,270 +485,67 @@ For other MCP-compatible clients, use the standard MCP server configuration form
 
 ## Available MCP Tools
 
-The server exposes the following tools through the MCP protocol:
+The server exposes a compact, action-based tool surface. Each tool takes an
+`action` parameter so LLM clients see one tool per concept instead of 3–6
+near-duplicates. Write actions are rejected when `TRACKER_READ_ONLY=true`.
 
-<details>
-<summary><strong>Queue Management</strong></summary>
+For the authoritative list of actions, required parameters and return shapes,
+call `list_tools` against the running server — every tool's `description`
+documents its actions inline.
 
-- **`queues_get_all`**: List all available Yandex Tracker queues
-  - Parameters:
-    - `fields` (optional): Fields to include in the response (e.g., ["key", "name"]). Helps optimize context window usage by selecting only needed fields. If not specified, returns all available fields.
-    - `page` (optional): Page number to return. If not specified, retrieves all pages automatically.
-    - `per_page` (optional): Number of items per page (default: 100)
-  - Returns paginated queue information with selective field inclusion
-  - Respects `TRACKER_LIMIT_QUEUES` restrictions
+### Issues
 
-- **`queue_get_tags`**: Get all tags for a specific queue
-  - Parameters: `queue_id` (string, queue key like "SOMEPROJECT")
-  - Returns list of available tags in the specified queue
-  - Respects `TRACKER_LIMIT_QUEUES` restrictions
+- `issue_get` — read a single issue by key
+- `issue_get_url` — build a Tracker web URL from an issue id
+- `issues_find` — YQL search with `query` / structured `filter` / `keys` and sort
+- `issues_count` — YQL match count
+- `issue_get_transitions` — list the status transitions available from the current state
+- `issue_create` / `issue_update` / `issue_close` / `issue_execute_transition` — write paths
+- `issue_move_to_queue` — move an issue to another queue
+- `issue_comments(action=get/add/update/delete)`
+- `issue_links(action=get/add/delete)`
+- `issue_worklogs(action=get/add/update/delete)`
+- `issue_attachments(action=get/upload/download/delete)`
+- `issue_checklist(action=get/add/update/delete/clear)`
+- `issue_tags(action=add/remove)`
 
-- **`queue_get_versions`**: Get all versions for a specific queue
-  - Parameters: `queue_id` (string, queue key like "SOMEPROJECT")
-  - Returns list of available versions in the specified queue with details like name, description, dates, and status
-  - Respects `TRACKER_LIMIT_QUEUES` restrictions
+### Queues & reference data
 
-- **`queue_get_fields`**: Get fields for a specific queue
-  - Parameters:
-    - `queue_id` (string, required): Queue key like "SOMEPROJECT"
-    - `include_local_fields` (boolean, optional, default: true): Whether to include queue-specific local fields
-  - Returns list of global fields and optionally local (queue-specific) fields
-  - Makes parallel requests to fetch both field types when `include_local_fields` is true
-  - The `schema.required` property indicates whether a field is mandatory
-  - Use this to find available and required fields before creating an issue with `issue_create` tool
-  - Respects `TRACKER_LIMIT_QUEUES` restrictions
+- `queues(action=list/tags/versions/fields/metadata/create)`
+- `tracker_reference(kind=global_fields/statuses/issue_types/priorities/resolutions)`
 
-- **`queue_get_metadata`**: Get detailed metadata about a specific queue
-  - Parameters:
-    - `queue_id` (string, required): Queue key like "SOMEPROJECT"
-    - `expand` (array of strings, optional): Fields to expand in the response. Available options: `all`, `projects`, `components`, `versions`, `types`, `team`, `workflows`, `fields`, `issueTypesConfig`
-  - Returns queue information including name, description, default type/priority, and optionally expanded data
-  - Use `expand: ["issueTypesConfig"]` to get available resolutions for each issue type (needed for `issue_close` tool)
-  - Respects `TRACKER_LIMIT_QUEUES` restrictions
+### Boards, sprints, agile
 
-</details>
+- `boards(action=list/get/columns/sprints/create/update/delete)`
+- `board_columns(action=create/update/delete)`
+- `sprints(action=get/create/update/delete/start/finish)`
 
-<details>
-<summary><strong>User Management</strong></summary>
+### Entities & saved views
 
-- **`users_get_all`**: Get information about user accounts registered in the organization
-  - Parameters:
-    - `per_page` (optional): Number of users per page (default: 50)
-    - `page` (optional): Page number to return (default: 1)
-  - Returns paginated list of users with login, email, license status, and organizational details
-  - Includes user metadata such as external status, dismissal status, and notification preferences
+- `components(action=list/get/create/update/delete)`
+- `filters(action=list/get/create/update/delete)`
+- `dashboards(action=list/get/widgets/create/update/delete)`
 
-- **`user_get`**: Get information about a specific user by login or UID
-  - Parameters: `user_id` (string, user login like "john.doe" or UID like "12345")
-  - Returns detailed user information including login, email, license status, and organizational details
-  - Supports both user login names and numeric user IDs for flexible identification
+### Automations
 
-- **`user_get_current`**: Get information about the current authenticated user
-  - No parameters required
-  - Returns detailed information about the user associated with the current authentication token
-  - Includes login, email, display name, and organizational details for the authenticated user
+- `triggers(action=list/get/create/update/delete)`
+- `autoactions(action=list/get/create/update/delete)`
+- `macros(action=list/get/create/update/delete)`
+- `workflows(action=list/get_queue)`
 
-- **`users_search`**: Search user based on login, email or real name (first or last name, or both)
-  - Parameters: `login_or_email_or_name` (string, user login, email or real name to search for)
-  - Returns either single user or multiple users if several match the query or an empty list if no users matched
-  - Uses fuzzy matching for real names with a similarity threshold of 80%
-  - Prioritizes exact matches for login and email over fuzzy name matches
+### Users
 
-</details>
+- `users(action=list/search/get/current)`
 
-<details>
-<summary><strong>Field Management</strong></summary>
+### Projects / portfolios / goals
 
-- **`get_global_fields`**: Get all global fields available in Yandex Tracker
-  - Returns complete list of global fields that can be used in issues
-  - Includes field schema, type information, and configuration
+- `projects_search`, `portfolios_search`, `goals_search`, `projects_legacy_list`
+- `entity_get` / `entity_create` / `entity_update` / `entity_delete`
 
-</details>
+### Bulk operations
 
-<details>
-<summary><strong>Status and Type Management</strong></summary>
+- `bulk(action=update/move/transition/status)`
 
-- **`get_statuses`**: Get all available issue statuses
-  - Returns complete list of issue statuses that can be assigned
-  - Includes status IDs, names, and type information
-
-- **`get_issue_types`**: Get all available issue types
-  - Returns complete list of issue types for creating/updating issues
-  - Includes type IDs, names, and configuration details
-
-- **`get_priorities`**: Get all available issue priorities
-  - Returns complete list of priorities that can be assigned to issues
-  - Includes priority keys, names, and order information
-
-- **`get_resolutions`**: Get all available issue resolutions
-  - Returns complete list of resolutions that can be used when closing issues
-  - Includes resolution keys, names, descriptions, and order information
-
-</details>
-
-<details>
-<summary><strong>Issue Operations</strong></summary>
-
-- **`issue_get`**: Retrieve detailed issue information by ID
-  - Parameters:
-    - `issue_id` (string, format: "QUEUE-123")
-    - `include_description` (boolean, optional, default: true): Whether to include issue description in the result. Can be large, so use only when needed.
-  - Returns complete issue data including status, assignee, description, etc.
-
-- **`issue_get_url`**: Generate web URL for an issue
-  - Parameters: `issue_id` (string)
-  - Returns: `https://tracker.yandex.ru/{issue_id}`
-
-- **`issue_get_comments`**: Fetch all comments for an issue
-  - Parameters: `issue_id` (string)
-  - Returns chronological list of comments with metadata
-
-- **`issue_add_comment`**: Add a comment to an issue
-  - Parameters:
-    - `issue_id` (string, required, format: "QUEUE-123")
-    - `text` (string, required): Comment text (markdown supported by Tracker)
-    - `summonees` (array of strings, optional): Users to summon (logins or IDs). **This is the API way to mention/call users** (notifications are triggered by this field, not by `@login` in text).
-    - `maillist_summonees` (array of strings, optional): Mailing lists to summon (emails)
-    - `markup_type` (string, optional): Use `md` for YFM (markdown)
-    - `is_add_to_followers` (boolean, optional, default: true): Add comment author to followers
-  - Returns created comment object
-
-- **`issue_update_comment`**: Update an existing comment in an issue
-  - Parameters:
-    - `issue_id` (string, required, format: "QUEUE-123")
-    - `comment_id` (int, required): Comment ID
-    - `text` (string, required): New comment text (markdown supported by Tracker)
-    - `summonees` (array of strings, optional): Users to summon (logins or IDs)
-    - `maillist_summonees` (array of strings, optional): Mailing lists to summon (emails)
-    - `markup_type` (string, optional): Use `md` for YFM (markdown)
-  - Returns updated comment object
-
-- **`issue_delete_comment`**: Delete a comment from an issue
-  - Parameters:
-    - `issue_id` (string, required, format: "QUEUE-123")
-    - `comment_id` (int, required): Comment ID
-  - Returns: `null` (success)
-
-- **`issue_get_links`**: Get related issue links
-  - Parameters: `issue_id` (string)
-  - Returns links to related, blocked, or duplicate issues
-
-- **`issue_get_worklogs`**: Retrieve worklog entries
-  - Parameters: `issue_ids` (array of strings)
-  - Returns time tracking data for specified issues
-
-- **`issue_add_worklog`**: Add a worklog entry (log spent time) to an issue
-  - Parameters:
-    - `issue_id` (string, required, format: "QUEUE-123")
-    - `duration` (string, required): ISO-8601 duration (e.g. `PT1H30M`)
-    - `comment` (string, optional): Worklog comment
-    - `start` (datetime, optional): Work start datetime (UTC assumed if timezone is not provided)
-  - Returns created worklog entry
-
-- **`issue_update_worklog`**: Update a worklog entry (spent time record) in an issue
-  - Parameters:
-    - `issue_id` (string, required, format: "QUEUE-123")
-    - `worklog_id` (int, required): Worklog entry ID
-    - `duration` (string, optional): ISO-8601 duration (e.g. `PT1H30M`)
-    - `comment` (string, optional): Worklog comment
-    - `start` (datetime, optional): Work start datetime (UTC assumed if timezone is not provided)
-  - Returns updated worklog entry
-
-- **`issue_delete_worklog`**: Delete a worklog entry (spent time record) from an issue
-  - Parameters:
-    - `issue_id` (string, required, format: "QUEUE-123")
-    - `worklog_id` (int, required): Worklog entry ID
-  - Returns: `null` (success)
-
-- **`issue_get_attachments`**: Get attachments for an issue
-  - Parameters: `issue_id` (string, format: "QUEUE-123")
-  - Returns list of attachments with metadata for the specified issue
-
-- **`issue_get_checklist`**: Get checklist items of an issue
-  - Parameters: `issue_id` (string, format: "QUEUE-123")
-  - Returns list of checklist items including text, status, assignee, and deadline information
-
-- **`issue_get_transitions`**: Get possible status transitions for an issue
-  - Parameters: `issue_id` (string, format: "QUEUE-123")
-  - Returns list of available transitions that can be performed on the issue
-  - Each transition includes an ID, display name, and target status information
-
-- **`issue_execute_transition`**: Execute a status transition for an issue
-  - Parameters:
-    - `issue_id` (string, required, format: "QUEUE-123"): The issue key
-    - `transition_id` (string, required): The transition ID to execute. **IMPORTANT**: Must be one of the IDs returned by `issue_get_transitions` tool
-    - `comment` (string, optional): Optional comment to add when executing the transition
-    - `fields` (object, optional): Dictionary of additional fields to set during the transition. Common fields include `resolution` (e.g., 'fixed', 'wontFix') for closing issues, `assignee` for reassigning, etc.
-  - Returns list of available transitions for the new status after the transition is executed
-  - **Usage note**: You MUST first call `issue_get_transitions` to retrieve available transitions, then pass one of the returned transition IDs. Do NOT use arbitrary transition IDs.
-
-- **`issue_close`**: Close an issue with a resolution (convenience tool)
-  - Parameters:
-    - `issue_id` (string, required, format: "QUEUE-123"): The issue key
-    - `resolution_id` (string, required): The resolution ID to set when closing (e.g., 'fixed', 'wontFix', 'duplicate')
-    - `comment` (string, optional): Optional comment to add when closing the issue
-  - Automatically finds a transition to a 'done' status and executes it with the specified resolution
-  - Returns list of available transitions for the new (closed) status
-  - **Usage note**: Before closing, you MUST:
-    1. Call `issue_get` to retrieve the issue's `type` field
-    2. Call `get_queue_metadata` with `expand: ["issueTypesConfig"]` to get available resolutions
-    3. Choose a resolution from the `issueTypesConfig` entry matching the issue's type - each issue type has its own set of valid resolutions
-
-- **`issue_create`**: Create a new issue in a queue
-  - Parameters:
-    - `queue` (string, required): Queue key where to create the issue (e.g., 'MYQUEUE')
-    - `summary` (string, required): Issue title/summary
-    - `type` (int, optional): Issue type ID (from `get_issue_types` tool)
-    - `description` (string, optional): Issue description
-    - `assignee` (string or int, optional): Assignee login or UID
-    - `priority` (string, optional): Priority key (from `get_priorities` tool)
-    - `fields` (object, optional): Additional fields to set during issue creation. **IMPORTANT**: Before creating an issue, you MUST call `queue_get_fields` to get available fields (it returns both global and local fields by default). Fields with `schema.required=true` are mandatory. Use the field's `id` property as the key in this map (e.g., `{"fieldId": "value"}`)
-  - Returns the newly created issue object with all standard issue fields
-  - Respects `TRACKER_LIMIT_QUEUES` restrictions
-
-- **`issue_update`**: Update an existing issue
-  - Parameters:
-    - `issue_id` (string, required, format: "QUEUE-123"): The issue key to update
-    - `summary` (string, optional): New issue title/summary
-    - `description` (string, optional): New issue description
-    - `markup_type` (string, optional): Markup type for description text (use 'md' for YFM markup)
-    - `parent` (IssueUpdateParent, optional): Parent issue reference with `id` (string) and/or `key` (string, e.g., 'QUEUE-123')
-    - `sprint` (array of IssueUpdateSprint, optional): Sprint assignments - array of objects with `id` (int) field
-    - `type` (IssueUpdateType, optional): Issue type with `id` (string) and/or `key` (string, e.g., 'bug', 'task')
-    - `priority` (IssueUpdatePriority, optional): Priority with `id` (string) and/or `key` (string, e.g., 'critical', 'normal')
-    - `followers` (array of IssueUpdateFollower, optional): Followers - array of objects with `id` (string, user ID or login)
-    - `project` (IssueUpdateProject, optional): Project with `primary` (int, main project shortId) and optional `secondary` (array of ints)
-    - `attachment_ids` (array of strings, optional): IDs of temporary files to attach
-    - `description_attachment_ids` (array of strings, optional): IDs of temporary files to embed in description
-    - `tags` (array of strings, optional): Issue tags
-    - `version` (int, optional): Issue version for optimistic locking - changes only made to current version
-    - `fields` (object, optional): Additional fields to update. Use `queue_get_fields` to discover available fields.
-  - Returns the updated issue object with all standard issue fields
-  - Only provided fields are updated; omitted fields remain unchanged
-  - Respects `TRACKER_LIMIT_QUEUES` restrictions
-
-</details>
-
-<details>
-<summary><strong>Search and Discovery</strong></summary>
-
-- **`issues_find`**: Search issues using [Yandex Tracker Query Language](https://yandex.ru/support/tracker/ru/user/query-filter)
-  - Parameters:
-    - `query` (required): Query string using Yandex Tracker Query Language syntax
-    - `include_description` (boolean, optional, default: false): Whether to include issue description in the issues result. Can be large, so use only when needed.
-    - `fields` (list of strings, optional): Fields to include in the response. Helps optimize context window usage by selecting only needed fields. If not specified, returns all available fields.
-    - `page` (optional): Page number for pagination (default: 1)
-    - `per_page` (optional): Number of items per page (default: 100). May be decreased if results exceed context window.
-  - Returns up to specified number of issues per page
-
-- **`issues_count`**: Count issues matching a query using [Yandex Tracker Query Language](https://yandex.ru/support/tracker/ru/user/query-filter)
-  - Parameters:
-    - `query` (required): Query string using Yandex Tracker Query Language syntax
-  - Returns the total count of issues matching the specified criteria
-  - Supports all query language features: field filtering, date functions, logical operators, and complex expressions
-  - Useful for analytics, reporting, and understanding issue distribution without retrieving full issue data
-
-</details>
 
 ## http Transport
 

@@ -23,14 +23,23 @@ uv run mcp-tracker # Run the server
 - **Client** (`mcp_tracker/tracker/custom/client.py`): Implements protocols, handles HTTP requests
 - **Caching** (`mcp_tracker/tracker/caching/client.py`): Wraps protocols with Redis caching
 - **MCP Server** (`mcp_tracker/mcp/server.py`): Server creation and configuration
-- **MCP Tools** (`mcp_tracker/mcp/tools/`): Tool definitions organized by category
-  - `_access.py`: Access control helpers (`check_issue_access`, `check_queue_access`)
-  - `queue.py`: Queue tools (5 read-only tools)
-  - `field.py`: Global field/metadata tools (6 read-only tools)
-  - `issue_read.py`: Issue read tools (9 read-only tools)
-  - `issue_write.py`: Issue write tools (4 tools, conditional on `tracker_read_only`)
-  - `user.py`: User tools (4 read-only tools)
-  - `__init__.py`: Exports `register_all_tools()` which orchestrates tool registration
+- **MCP Tools** (`mcp_tracker/mcp/tools/`): Consolidated tool surface (~27 tools total).
+  Each tool is action-based (`action=...`). Write actions are gated internally
+  via `require_write_mode()` when `tracker_read_only=True`.
+  - `_access.py`: Access control + read-only gate (`check_issue_access`, `check_queue_access`, `require_write_mode`)
+  - `field.py`: `tracker_reference(kind=...)` + `issue_get_url`
+  - `queue.py`: `queues(action=...)` — list/tags/versions/fields/metadata/create
+  - `user.py`: `users(action=...)` — list/search/get/current
+  - `issue_read.py`: `issue_get`, `issues_find`, `issues_count`, `issue_get_transitions`
+  - `issue_write.py`: `issue_create/update/close/execute_transition`
+  - `issue_extras.py`: `issue_move_to_queue`
+  - `issue_parts.py`: `issue_comments/links/worklogs/attachments/checklist/tags` (action-based)
+  - `crud.py`: `components/filters/dashboards/sprints` (action-based)
+  - `board.py`: `boards(action=...)` + `board_columns(action=...)`
+  - `automation.py`: `triggers/autoactions/macros/workflows` (action-based)
+  - `bulkchange.py`: `bulk(action=update/move/transition/status)`
+  - `project.py`: entity tools for projects/portfolios/goals
+  - `__init__.py`: `register_all_tools()` orchestrator
 - **Settings** (`mcp_tracker/settings.py`): Pydantic settings from environment variables
 - All protocol methods accept optional `auth: YandexAuth | None` parameter for OAuth support.
 - All Pydantic models for Yandex Tracker entities inherit from `BaseTrackerEntity`.
@@ -97,37 +106,34 @@ For paginated methods, use `side_effect` for sequential returns: `mock.method.si
 1. **Protocol**: Add method signature to `mcp_tracker/tracker/proto/*.py`
 2. **Client**: Implement in `mcp_tracker/tracker/custom/client.py`
 3. **Caching**: Add wrapper in `mcp_tracker/tracker/caching/client.py`
-4. **Tool**: Add function to appropriate module in `mcp_tracker/mcp/tools/`:
-   - Queue tools → `queue.py`
-   - Global field/metadata tools → `field.py`
-   - Issue read-only tools → `issue_read.py`
-   - Issue write tools → `issue_write.py`
-   - User tools → `user.py`
-5. **Tests**: Add to appropriate `tests/mcp/tools/test_*_tools.py`
-6. **Docs**: Update `README.md`, `README_ru.md`, and `manifest.json`
+4. **Tool**: Prefer adding a new action to an existing consolidated tool (e.g. a new
+   `component` op goes as a new `action` branch in `crud.py → components`). Only add
+   a separate tool when it's a genuinely new concept that doesn't fit any family.
+   - Consolidated families live in: `field.py` (tracker_reference), `queue.py` (queues),
+     `user.py` (users), `issue_parts.py` (issue_comments/links/worklogs/attachments/
+     checklist/tags), `crud.py` (components/filters/dashboards/sprints), `board.py`
+     (boards/board_columns), `automation.py` (triggers/autoactions/macros/workflows),
+     `bulkchange.py` (bulk).
+   - Standalone issue ops live in `issue_read.py` / `issue_write.py` / `issue_extras.py`.
+5. **Tests**: Add to the matching `tests/mcp/tools/test_*_tools.py` (or `test_issue_parts_tools.py` / `test_crud_tools.py` / `test_automation_tools.py` / `test_bulk_tools.py`)
+6. **Docs**: Update `README.md`, `README_ru.md`, and `manifest.json` if the tool surface changes
 
-### Tool Categories
+### Read-only gating
 
-| Category | Module | Read-Only | Description |
-|----------|--------|-----------|-------------|
-| Queue | `queue.py` | Yes | Queue listing, tags, versions, fields, metadata |
-| Field | `field.py` | Yes | Global fields, statuses, types, priorities, resolutions |
-| Issue Read | `issue_read.py` | Yes | Get, find, count issues; comments, links, worklogs, etc. |
-| Issue Write | `issue_write.py` | No | Create, update, transition, close issues |
-| User | `user.py` | Yes | List, search, get users |
-
-**Write tools** in `issue_write.py` are only registered when `settings.tracker_read_only=False`.
+Consolidated tools are registered in every mode. When a caller invokes a write
+`action`, the tool calls `require_write_mode(settings, action)` first, which
+raises `TrackerError` if `settings.tracker_read_only=True`. Pure write-only
+tools (e.g. `issue_create`, `entity_create`) still live in their own
+`*_write_tools` registration and are gated at registration time.
 
 ### Test Requirements for New Tools
 
-- Test success case with expected return data
-- Test parameter passing (verify `call_args`)
-- Test optional parameters (provided vs omitted)
-- Test queue restrictions with `client_session_with_limits` if tool accesses issues/queues
-- Add tool name to appropriate list in `tests/mcp/server/test_server_creation.py`:
-  - Read-only tools → `READ_ONLY_TOOL_NAMES`
-  - Write tools → `WRITE_TOOL_NAMES`
-- For write tools, add test with `client_session_read_only` to verify not registered
+- Test each `action` with its required parameters
+- Verify that missing required parameters yield an error
+- For write actions on consolidated tools, add a `client_session_read_only` test asserting the action is blocked
+- Test queue restrictions with `client_session_with_limits` if the tool touches issues/queues
+- Add the tool name to the matching list in `tests/mcp/server/test_server_creation.py`
+  (`READ_ONLY_TOOL_NAMES` for anything always registered, `WRITE_TOOL_NAMES` for write-only tools)
 
 ## Configuration
 

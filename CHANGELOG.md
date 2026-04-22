@@ -2,6 +2,42 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.0] - 2026-04-22
+
+### Breaking Changes — Tool Consolidation (108 → 27)
+
+Tool surface dramatically reduced so LLM clients that load every tool upfront
+stop drowning in options. Each concept is now a single tool with an `action`
+parameter; write actions are registered alongside reads and rejected inside
+the tool when `TRACKER_READ_ONLY=true`.
+
+Renamed / merged (old → new):
+- `get_global_fields` / `get_statuses` / `get_issue_types` / `get_priorities` / `get_resolutions` → `tracker_reference(kind=...)`
+- `issue_get_comments` + `issue_add/update/delete_comment` → `issue_comments(action=...)`
+- `issue_get_links` + `issue_add/delete_link` → `issue_links(action=...)`
+- `issue_get_worklogs` + `issue_add/update/delete_worklog` → `issue_worklogs(action=...)`
+- `issue_get_attachments` + `issue_upload/download/delete_attachment` → `issue_attachments(action=...)`
+- `issue_get_checklist` + `issue_add/update/delete_checklist_item` + `issue_clear_checklist` → `issue_checklist(action=...)`
+- `issue_add_tags` + `issue_remove_tags` → `issue_tags(action=...)`
+- `components_list` + `component_get/create/update/delete` → `components(action=...)`
+- `filters_list` + `filter_get/create/update/delete` → `filters(action=...)`
+- `dashboards_list` + `dashboard_get/get_widgets/create/update/delete` → `dashboards(action=...)`
+- `sprint_get/create/update/delete/start/finish` → `sprints(action=...)`
+- `boards_get_all` + `board_get/get_columns/get_sprints/create/update/delete` → `boards(action=...)`
+- `board_column_create/update/delete` → `board_columns(action=...)`
+- `triggers_list` + `trigger_get/create/update/delete` → `triggers(action=...)`
+- `autoactions_list` + `autoaction_get/create/update/delete` → `autoactions(action=...)`
+- `macros_list` + `macro_get/create/update/delete` → `macros(action=...)`
+- `workflows_list` + `queue_workflow_get` → `workflows(action=...)`
+- `queues_get_all` + `queue_get_tags/versions/fields/metadata` + `queue_create` → `queues(action=...)`
+- `users_get_all` + `users_search` + `user_get` + `user_get_current` → `users(action=...)`
+- `bulk_update` + `bulk_move` + `bulk_transition` + `bulk_status_get` → `bulk(action=...)`
+
+### Internal
+- Added `require_write_mode()` helper in `_access.py` for internal read-only gating
+- Added `_dump()` serializer to ship Pydantic models inside `dict[str, Any]` return types
+- Updated test expectations (`READ_ONLY_TOOL_NAMES` / `WRITE_TOOL_NAMES`) for the new tool surface
+
 ## [0.6.3] - 2026-02-08
 
 ### Features
