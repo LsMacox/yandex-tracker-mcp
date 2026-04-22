@@ -1,6 +1,6 @@
 """Global field and metadata MCP tools (read-only)."""
 
-from typing import Any
+from typing import Any, Literal
 
 from mcp.server import FastMCP
 from mcp.server.fastmcp import Context
@@ -10,90 +10,53 @@ from mcp_tracker.mcp.context import AppContext
 from mcp_tracker.mcp.params import IssueID
 from mcp_tracker.mcp.utils import get_yandex_auth
 from mcp_tracker.settings import Settings
-from mcp_tracker.tracker.proto.types.fields import GlobalField
-from mcp_tracker.tracker.proto.types.issue_types import IssueType
-from mcp_tracker.tracker.proto.types.priorities import Priority
-from mcp_tracker.tracker.proto.types.resolutions import Resolution
-from mcp_tracker.tracker.proto.types.statuses import Status
+
+ReferenceKind = Literal[
+    "global_fields",
+    "statuses",
+    "issue_types",
+    "priorities",
+    "resolutions",
+]
 
 
 def register_field_tools(_settings: Settings, mcp: FastMCP[Any]) -> None:
-    """Register global field and metadata tools (all read-only).
-
-    All list-returning tools wrap their result in a single-key dict so MCP
-    clients receive one JSON object per response rather than a stream of
-    concatenated objects (which some clients render as invalid JSON).
-    """
+    """Register global reference/metadata tools (all read-only)."""
 
     @mcp.tool(
-        title="Get Global Fields",
-        description="Get all global fields available in Yandex Tracker. "
-        "Returns a `{'fields': [...]}` object.",
+        title="Get Tracker Reference",
+        description=(
+            "Get reference data (dictionaries) from Yandex Tracker. "
+            "Pick a single `kind` per call. Returns a `{kind: [...]}` object. "
+            "Kinds:\n"
+            "- `global_fields` — custom global fields (id, name, schema, ...)\n"
+            "- `statuses` — all statuses across workflows\n"
+            "- `issue_types` — issue types (task, bug, epic, ...)\n"
+            "- `priorities` — priority levels (trivial..blocker)\n"
+            "- `resolutions` — resolution values (fixed, wontFix, duplicate, ...)\n\n"
+            "Note: priorities and resolutions are largely standard across installations; "
+            "call this tool only when you need the exact list for the current organization."
+        ),
         annotations=ToolAnnotations(readOnlyHint=True),
     )
-    async def get_global_fields(
+    async def tracker_reference(
         ctx: Context[Any, AppContext],
-    ) -> dict[str, list[GlobalField]]:
-        items = await ctx.request_context.lifespan_context.fields.get_global_fields(
-            auth=get_yandex_auth(ctx),
-        )
-        return {"fields": items}
+        kind: ReferenceKind,
+    ) -> dict[str, list[Any]]:
+        fields = ctx.request_context.lifespan_context.fields
+        auth = get_yandex_auth(ctx)
 
-    @mcp.tool(
-        title="Get Statuses",
-        description="Get all statuses available in Yandex Tracker. "
-        "Returns a `{'statuses': [...]}` object.",
-        annotations=ToolAnnotations(readOnlyHint=True),
-    )
-    async def get_statuses(
-        ctx: Context[Any, AppContext],
-    ) -> dict[str, list[Status]]:
-        items = await ctx.request_context.lifespan_context.fields.get_statuses(
-            auth=get_yandex_auth(ctx),
-        )
-        return {"statuses": items}
-
-    @mcp.tool(
-        title="Get Issue Types",
-        description="Get all issue types available in Yandex Tracker. "
-        "Returns a `{'issue_types': [...]}` object.",
-        annotations=ToolAnnotations(readOnlyHint=True),
-    )
-    async def get_issue_types(
-        ctx: Context[Any, AppContext],
-    ) -> dict[str, list[IssueType]]:
-        items = await ctx.request_context.lifespan_context.fields.get_issue_types(
-            auth=get_yandex_auth(ctx),
-        )
-        return {"issue_types": items}
-
-    @mcp.tool(
-        title="Get Priorities",
-        description="Get all priorities available in Yandex Tracker. "
-        "Returns a `{'priorities': [...]}` object.",
-        annotations=ToolAnnotations(readOnlyHint=True),
-    )
-    async def get_priorities(
-        ctx: Context[Any, AppContext],
-    ) -> dict[str, list[Priority]]:
-        items = await ctx.request_context.lifespan_context.fields.get_priorities(
-            auth=get_yandex_auth(ctx),
-        )
-        return {"priorities": items}
-
-    @mcp.tool(
-        title="Get Resolutions",
-        description="Get all resolutions available in Yandex Tracker. "
-        "Returns a `{'resolutions': [...]}` object.",
-        annotations=ToolAnnotations(readOnlyHint=True),
-    )
-    async def get_resolutions(
-        ctx: Context[Any, AppContext],
-    ) -> dict[str, list[Resolution]]:
-        items = await ctx.request_context.lifespan_context.fields.get_resolutions(
-            auth=get_yandex_auth(ctx),
-        )
-        return {"resolutions": items}
+        if kind == "global_fields":
+            return {"global_fields": list(await fields.get_global_fields(auth=auth))}
+        if kind == "statuses":
+            return {"statuses": list(await fields.get_statuses(auth=auth))}
+        if kind == "issue_types":
+            return {"issue_types": list(await fields.get_issue_types(auth=auth))}
+        if kind == "priorities":
+            return {"priorities": list(await fields.get_priorities(auth=auth))}
+        if kind == "resolutions":
+            return {"resolutions": list(await fields.get_resolutions(auth=auth))}
+        raise ValueError(f"Unknown reference kind: {kind}")
 
     @mcp.tool(
         title="Get Issue URL",

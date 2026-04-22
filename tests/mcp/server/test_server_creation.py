@@ -9,12 +9,8 @@ READ_ONLY_TOOL_NAMES = [
     "queue_get_versions",
     "queue_get_fields",
     "queue_get_metadata",
-    # Field tools (6)
-    "get_global_fields",
-    "get_statuses",
-    "get_issue_types",
-    "get_priorities",
-    "get_resolutions",
+    # Field tools (2)
+    "tracker_reference",
     "issue_get_url",
     # Issue read tools (9)
     "issue_get",
