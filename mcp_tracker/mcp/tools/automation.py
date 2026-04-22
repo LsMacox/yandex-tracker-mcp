@@ -1,332 +1,320 @@
-"""Queue automations: triggers, autoactions, macros, workflows."""
+"""Queue automations (triggers / autoactions / macros / workflows).
 
-from typing import Annotated, Any
+Each concept is exposed as a single action-based tool. Write actions are
+rejected in read-only mode via `require_write_mode()`.
+"""
+
+from typing import Annotated, Any, Literal, TypeVar
 
 from mcp.server import FastMCP
 from mcp.server.fastmcp import Context
-from mcp.types import ToolAnnotations
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from mcp_tracker.mcp.context import AppContext
 from mcp_tracker.mcp.params import QueueID
-from mcp_tracker.mcp.tools._access import check_queue_access
+from mcp_tracker.mcp.tools._access import check_queue_access, require_write_mode
 from mcp_tracker.mcp.utils import get_yandex_auth
 from mcp_tracker.settings import Settings
-from mcp_tracker.tracker.proto.types.misc import (
-    Autoaction,
-    Macro,
-    Trigger,
-    Workflow,
-)
 
-TriggerID = Annotated[str | int, Field(description="Trigger identifier")]
-AutoactionID = Annotated[str | int, Field(description="Autoaction identifier")]
-MacroID = Annotated[str | int, Field(description="Macro identifier")]
+TriggerAction = Literal["list", "get", "create", "update", "delete"]
+AutoactionAction = Literal["list", "get", "create", "update", "delete"]
+MacroAction = Literal["list", "get", "create", "update", "delete"]
+WorkflowAction = Literal["list", "get_queue"]
+
+
+_T = TypeVar("_T")
+
+
+def _dump(value: Any) -> Any:
+    if isinstance(value, BaseModel):
+        return value.model_dump(mode="json", by_alias=True)
+    if isinstance(value, list):
+        return [_dump(v) for v in value]
+    return value
+
+
+def _require(value: _T | None, name: str, action: str) -> _T:
+    if value is None:
+        raise ValueError(f"`{name}` is required for action `{action}`.")
+    return value
 
 
 def register_automation_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
-    # --- triggers read ---
-    @mcp.tool(
-        title="List Triggers",
-        description="List automation triggers of the queue. "
-        "Returns a `{'triggers': [...]}` object.",
-        annotations=ToolAnnotations(readOnlyHint=True),
-    )
-    async def triggers_list(
-        ctx: Context[Any, AppContext], queue_id: QueueID
-    ) -> dict[str, list[Trigger]]:
-        check_queue_access(settings, queue_id)
-        items = await ctx.request_context.lifespan_context.automations.triggers_list(
-            queue_id, auth=get_yandex_auth(ctx)
-        )
-        return {"triggers": items}
+    """Register consolidated automation tools."""
 
+    # ─── triggers ────────────────────────────────────────────────
     @mcp.tool(
-        title="Get Trigger",
-        description="Get a single trigger by id.",
-        annotations=ToolAnnotations(readOnlyHint=True),
+        title="Triggers",
+        description=(
+            "Manage queue triggers (event-driven automations).\n\n"
+            "Actions:\n"
+            "- `list` → `{triggers: [...]}`; requires `queue_id`\n"
+            "- `get` → trigger; requires `queue_id` and `trigger_id`\n"
+            "- `create` → trigger; requires `queue_id`, `name`, `actions`; "
+            "optional `conditions`, `active`, `extra`\n"
+            "- `update` → trigger; requires `queue_id`, `trigger_id`, `fields`\n"
+            "- `delete` → `{ok: true}`; requires `queue_id` and `trigger_id`"
+        ),
     )
-    async def trigger_get(
+    async def triggers(
         ctx: Context[Any, AppContext],
+        action: TriggerAction,
         queue_id: QueueID,
-        trigger_id: TriggerID,
-    ) -> Trigger:
-        check_queue_access(settings, queue_id)
-        return await ctx.request_context.lifespan_context.automations.trigger_get(
-            queue_id, trigger_id, auth=get_yandex_auth(ctx)
-        )
-
-    # --- autoactions read ---
-    @mcp.tool(
-        title="List Autoactions",
-        description="List scheduled autoactions of the queue. "
-        "Returns a `{'autoactions': [...]}` object.",
-        annotations=ToolAnnotations(readOnlyHint=True),
-    )
-    async def autoactions_list(
-        ctx: Context[Any, AppContext], queue_id: QueueID
-    ) -> dict[str, list[Autoaction]]:
-        check_queue_access(settings, queue_id)
-        items = await ctx.request_context.lifespan_context.automations.autoactions_list(
-            queue_id, auth=get_yandex_auth(ctx)
-        )
-        return {"autoactions": items}
-
-    @mcp.tool(
-        title="Get Autoaction",
-        description="Get a single autoaction by id.",
-        annotations=ToolAnnotations(readOnlyHint=True),
-    )
-    async def autoaction_get(
-        ctx: Context[Any, AppContext],
-        queue_id: QueueID,
-        action_id: AutoactionID,
-    ) -> Autoaction:
-        check_queue_access(settings, queue_id)
-        return await ctx.request_context.lifespan_context.automations.autoaction_get(
-            queue_id, action_id, auth=get_yandex_auth(ctx)
-        )
-
-    # --- macros read ---
-    @mcp.tool(
-        title="List Macros",
-        description="List macros of the queue. Returns a `{'macros': [...]}` object.",
-        annotations=ToolAnnotations(readOnlyHint=True),
-    )
-    async def macros_list(
-        ctx: Context[Any, AppContext], queue_id: QueueID
-    ) -> dict[str, list[Macro]]:
-        check_queue_access(settings, queue_id)
-        items = await ctx.request_context.lifespan_context.automations.macros_list(
-            queue_id, auth=get_yandex_auth(ctx)
-        )
-        return {"macros": items}
-
-    @mcp.tool(
-        title="Get Macro",
-        description="Get a macro by id.",
-        annotations=ToolAnnotations(readOnlyHint=True),
-    )
-    async def macro_get(
-        ctx: Context[Any, AppContext],
-        queue_id: QueueID,
-        macro_id: MacroID,
-    ) -> Macro:
-        check_queue_access(settings, queue_id)
-        return await ctx.request_context.lifespan_context.automations.macro_get(
-            queue_id, macro_id, auth=get_yandex_auth(ctx)
-        )
-
-    # --- workflows read ---
-    @mcp.tool(
-        title="List Workflows",
-        description="List all workflows available in the organization. "
-        "Returns a `{'workflows': [...]}` object.",
-        annotations=ToolAnnotations(readOnlyHint=True),
-    )
-    async def workflows_list(
-        ctx: Context[Any, AppContext],
-    ) -> dict[str, list[Workflow]]:
-        items = await ctx.request_context.lifespan_context.automations.workflows_list(
-            auth=get_yandex_auth(ctx)
-        )
-        return {"workflows": items}
-
-    @mcp.tool(
-        title="Get Queue Workflow",
-        description="Get the workflow (status graph) configured for a queue. "
-        "Useful before creating issues to understand available transitions.",
-        annotations=ToolAnnotations(readOnlyHint=True),
-    )
-    async def queue_workflow_get(
-        ctx: Context[Any, AppContext], queue_id: QueueID
-    ) -> Workflow | None:
-        check_queue_access(settings, queue_id)
-        return (
-            await ctx.request_context.lifespan_context.automations.queue_workflow_get(
-                queue_id, auth=get_yandex_auth(ctx)
-            )
-        )
-
-
-def register_automation_write_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
-    # triggers write
-    @mcp.tool(
-        title="Create Trigger",
-        description="Create an automation trigger for the queue. "
-        "`actions` is a list of action dicts; `conditions` is a list of condition dicts.",
-    )
-    async def trigger_create(
-        ctx: Context[Any, AppContext],
-        queue_id: QueueID,
-        name: Annotated[str, Field(description="Trigger name")],
+        trigger_id: Annotated[
+            str | int | None, Field(description="Trigger id (get/update/delete)")
+        ] = None,
+        name: Annotated[str | None, Field(description="Trigger name (create)")] = None,
         actions: Annotated[
-            list[dict[str, Any]], Field(description="Actions executed when triggered")
-        ],
+            list[dict[str, Any]] | None,
+            Field(description="Action objects executed when triggered (create)"),
+        ] = None,
         conditions: Annotated[
-            list[dict[str, Any]] | None, Field(description="Optional conditions list")
+            list[dict[str, Any]] | None,
+            Field(description="Trigger conditions (create)"),
         ] = None,
         active: Annotated[
-            bool | None, Field(description="Enable/disable the trigger")
+            bool | None, Field(description="Enable/disable (create)")
+        ] = None,
+        fields: Annotated[
+            dict[str, Any] | None, Field(description="Fields to update (update)")
         ] = None,
         extra: Annotated[
-            dict[str, Any] | None, Field(description="Additional body fields")
+            dict[str, Any] | None, Field(description="Extra body fields (create)")
         ] = None,
-    ) -> Trigger:
+    ) -> dict[str, Any]:
         check_queue_access(settings, queue_id)
-        return await ctx.request_context.lifespan_context.automations.trigger_create(
-            queue_id,
-            name=name,
-            actions=actions,
-            conditions=conditions,
-            active=active,
-            extra=extra,
-            auth=get_yandex_auth(ctx),
-        )
+        automations = ctx.request_context.lifespan_context.automations
+        auth = get_yandex_auth(ctx)
 
-    @mcp.tool(title="Update Trigger", description="Update trigger (PATCH).")
-    async def trigger_update(
-        ctx: Context[Any, AppContext],
-        queue_id: QueueID,
-        trigger_id: TriggerID,
-        fields: Annotated[dict[str, Any], Field(description="Fields to update")],
-    ) -> Trigger:
-        check_queue_access(settings, queue_id)
-        return await ctx.request_context.lifespan_context.automations.trigger_update(
-            queue_id, trigger_id, fields=fields, auth=get_yandex_auth(ctx)
-        )
+        def _need_id() -> str | int:
+            if trigger_id is None:
+                raise ValueError(f"`trigger_id` is required for action `{action}`.")
+            return trigger_id
 
+        if action == "list":
+            items = await automations.triggers_list(queue_id, auth=auth)
+            return {"triggers": _dump(items)}
+        if action == "get":
+            item = await automations.trigger_get(queue_id, _need_id(), auth=auth)
+            return {"trigger": _dump(item)}
+
+        require_write_mode(settings, action)
+
+        if action == "create":
+            name_ = _require(name, "name", action)
+            actions_ = _require(actions, "actions", action)
+            item = await automations.trigger_create(
+                queue_id,
+                name=name_,
+                actions=actions_,
+                conditions=conditions,
+                active=active,
+                extra=extra,
+                auth=auth,
+            )
+            return {"trigger": _dump(item)}
+        if action == "update":
+            flds = _require(fields, "fields", action)
+            item = await automations.trigger_update(
+                queue_id, _need_id(), fields=flds, auth=auth
+            )
+            return {"trigger": _dump(item)}
+        if action == "delete":
+            await automations.trigger_delete(queue_id, _need_id(), auth=auth)
+            return {"ok": True}
+        raise ValueError(f"Unknown action: {action}")
+
+    # ─── autoactions ────────────────────────────────────────────────
     @mcp.tool(
-        title="Delete Trigger",
-        description="Delete a queue trigger.",
-        annotations=ToolAnnotations(destructiveHint=True),
+        title="Autoactions",
+        description=(
+            "Manage queue autoactions (scheduled automations: filter + cron + actions).\n\n"
+            "Actions:\n"
+            "- `list` → `{autoactions: [...]}`; requires `queue_id`\n"
+            "- `get` → autoaction; requires `queue_id` and `autoaction_id`\n"
+            "- `create` → autoaction; requires `queue_id`, `name`, `filter`, `actions`; "
+            "optional `cron_expression`, `active`, `extra`\n"
+            "- `update` → autoaction; requires `queue_id`, `autoaction_id`, `fields`\n"
+            "- `delete` → `{ok: true}`; requires `queue_id` and `autoaction_id`"
+        ),
     )
-    async def trigger_delete(
+    async def autoactions(
         ctx: Context[Any, AppContext],
+        action: AutoactionAction,
         queue_id: QueueID,
-        trigger_id: TriggerID,
-    ) -> dict[str, bool]:
-        check_queue_access(settings, queue_id)
-        await ctx.request_context.lifespan_context.automations.trigger_delete(
-            queue_id, trigger_id, auth=get_yandex_auth(ctx)
-        )
-        return {"ok": True}
-
-    # autoactions write
-    @mcp.tool(
-        title="Create Autoaction",
-        description="Create a scheduled autoaction (filter + actions + cron).",
-    )
-    async def autoaction_create(
-        ctx: Context[Any, AppContext],
-        queue_id: QueueID,
-        name: Annotated[str, Field(description="Autoaction name")],
+        autoaction_id: Annotated[
+            str | int | None, Field(description="Autoaction id (get/update/delete)")
+        ] = None,
+        name: Annotated[
+            str | None, Field(description="Autoaction name (create)")
+        ] = None,
         filter: Annotated[
-            dict[str, Any], Field(description="Filter selecting target issues")
-        ],
+            dict[str, Any] | None,
+            Field(description="Filter selecting target issues (create)"),
+        ] = None,
         actions: Annotated[
-            list[dict[str, Any]], Field(description="Actions to execute")
-        ],
+            list[dict[str, Any]] | None,
+            Field(description="Actions to execute (create)"),
+        ] = None,
         cron_expression: Annotated[
-            str | None, Field(description="Cron expression for schedule")
+            str | None, Field(description="Cron expression (create)")
         ] = None,
-        active: Annotated[bool | None, Field(description="Enable flag")] = None,
+        active: Annotated[
+            bool | None, Field(description="Enable flag (create)")
+        ] = None,
+        fields: Annotated[
+            dict[str, Any] | None, Field(description="Fields to update (update)")
+        ] = None,
         extra: Annotated[
-            dict[str, Any] | None, Field(description="Additional body fields")
+            dict[str, Any] | None, Field(description="Extra body fields (create)")
         ] = None,
-    ) -> Autoaction:
+    ) -> dict[str, Any]:
         check_queue_access(settings, queue_id)
-        return await ctx.request_context.lifespan_context.automations.autoaction_create(
-            queue_id,
-            name=name,
-            filter=filter,
-            actions=actions,
-            cron_expression=cron_expression,
-            active=active,
-            extra=extra,
-            auth=get_yandex_auth(ctx),
-        )
+        automations = ctx.request_context.lifespan_context.automations
+        auth = get_yandex_auth(ctx)
 
-    @mcp.tool(title="Update Autoaction", description="Update autoaction (PATCH).")
-    async def autoaction_update(
-        ctx: Context[Any, AppContext],
-        queue_id: QueueID,
-        action_id: AutoactionID,
-        fields: Annotated[dict[str, Any], Field(description="Fields to update")],
-    ) -> Autoaction:
-        check_queue_access(settings, queue_id)
-        return await ctx.request_context.lifespan_context.automations.autoaction_update(
-            queue_id, action_id, fields=fields, auth=get_yandex_auth(ctx)
-        )
+        def _need_id() -> str | int:
+            if autoaction_id is None:
+                raise ValueError(f"`autoaction_id` is required for action `{action}`.")
+            return autoaction_id
 
+        if action == "list":
+            items = await automations.autoactions_list(queue_id, auth=auth)
+            return {"autoactions": _dump(items)}
+        if action == "get":
+            item = await automations.autoaction_get(queue_id, _need_id(), auth=auth)
+            return {"autoaction": _dump(item)}
+
+        require_write_mode(settings, action)
+
+        if action == "create":
+            name_ = _require(name, "name", action)
+            filter_ = _require(filter, "filter", action)
+            actions_ = _require(actions, "actions", action)
+            item = await automations.autoaction_create(
+                queue_id,
+                name=name_,
+                filter=filter_,
+                actions=actions_,
+                cron_expression=cron_expression,
+                active=active,
+                extra=extra,
+                auth=auth,
+            )
+            return {"autoaction": _dump(item)}
+        if action == "update":
+            flds = _require(fields, "fields", action)
+            item = await automations.autoaction_update(
+                queue_id, _need_id(), fields=flds, auth=auth
+            )
+            return {"autoaction": _dump(item)}
+        if action == "delete":
+            await automations.autoaction_delete(queue_id, _need_id(), auth=auth)
+            return {"ok": True}
+        raise ValueError(f"Unknown action: {action}")
+
+    # ─── macros ────────────────────────────────────────────────
     @mcp.tool(
-        title="Delete Autoaction",
-        description="Delete an autoaction.",
-        annotations=ToolAnnotations(destructiveHint=True),
+        title="Macros",
+        description=(
+            "Manage queue macros (comment templates + field changes).\n\n"
+            "Actions:\n"
+            "- `list` → `{macros: [...]}`; requires `queue_id`\n"
+            "- `get` → macro; requires `queue_id` and `macro_id`\n"
+            "- `create` → macro; requires `queue_id`, `name`; "
+            "optional `body`, `field_changes`, `extra`\n"
+            "- `update` → macro; requires `queue_id`, `macro_id`, `fields`\n"
+            "- `delete` → `{ok: true}`; requires `queue_id` and `macro_id`"
+        ),
     )
-    async def autoaction_delete(
+    async def macros(
         ctx: Context[Any, AppContext],
+        action: MacroAction,
         queue_id: QueueID,
-        action_id: AutoactionID,
-    ) -> dict[str, bool]:
-        check_queue_access(settings, queue_id)
-        await ctx.request_context.lifespan_context.automations.autoaction_delete(
-            queue_id, action_id, auth=get_yandex_auth(ctx)
-        )
-        return {"ok": True}
-
-    # macros write
-    @mcp.tool(
-        title="Create Macro",
-        description="Create a macro (comment template + field changes) for the queue.",
-    )
-    async def macro_create(
-        ctx: Context[Any, AppContext],
-        queue_id: QueueID,
-        name: Annotated[str, Field(description="Macro name")],
-        body: Annotated[str | None, Field(description="Comment template body")] = None,
+        macro_id: Annotated[
+            str | int | None, Field(description="Macro id (get/update/delete)")
+        ] = None,
+        name: Annotated[str | None, Field(description="Macro name (create)")] = None,
+        body: Annotated[
+            str | None, Field(description="Comment template body (create)")
+        ] = None,
         field_changes: Annotated[
             list[dict[str, Any]] | None,
-            Field(description="Field change operations applied by the macro"),
+            Field(description="Field change operations (create)"),
+        ] = None,
+        fields: Annotated[
+            dict[str, Any] | None, Field(description="Fields to update (update)")
         ] = None,
         extra: Annotated[
-            dict[str, Any] | None, Field(description="Additional body fields")
+            dict[str, Any] | None, Field(description="Extra body fields (create)")
         ] = None,
-    ) -> Macro:
+    ) -> dict[str, Any]:
         check_queue_access(settings, queue_id)
-        return await ctx.request_context.lifespan_context.automations.macro_create(
-            queue_id,
-            name=name,
-            body=body,
-            field_changes=field_changes,
-            extra=extra,
-            auth=get_yandex_auth(ctx),
-        )
+        automations = ctx.request_context.lifespan_context.automations
+        auth = get_yandex_auth(ctx)
 
-    @mcp.tool(title="Update Macro", description="Update macro (PATCH).")
-    async def macro_update(
-        ctx: Context[Any, AppContext],
-        queue_id: QueueID,
-        macro_id: MacroID,
-        fields: Annotated[dict[str, Any], Field(description="Fields to update")],
-    ) -> Macro:
-        check_queue_access(settings, queue_id)
-        return await ctx.request_context.lifespan_context.automations.macro_update(
-            queue_id, macro_id, fields=fields, auth=get_yandex_auth(ctx)
-        )
+        def _need_id() -> str | int:
+            if macro_id is None:
+                raise ValueError(f"`macro_id` is required for action `{action}`.")
+            return macro_id
 
+        if action == "list":
+            items = await automations.macros_list(queue_id, auth=auth)
+            return {"macros": _dump(items)}
+        if action == "get":
+            item = await automations.macro_get(queue_id, _need_id(), auth=auth)
+            return {"macro": _dump(item)}
+
+        require_write_mode(settings, action)
+
+        if action == "create":
+            name_ = _require(name, "name", action)
+            item = await automations.macro_create(
+                queue_id,
+                name=name_,
+                body=body,
+                field_changes=field_changes,
+                extra=extra,
+                auth=auth,
+            )
+            return {"macro": _dump(item)}
+        if action == "update":
+            flds = _require(fields, "fields", action)
+            item = await automations.macro_update(
+                queue_id, _need_id(), fields=flds, auth=auth
+            )
+            return {"macro": _dump(item)}
+        if action == "delete":
+            await automations.macro_delete(queue_id, _need_id(), auth=auth)
+            return {"ok": True}
+        raise ValueError(f"Unknown action: {action}")
+
+    # ─── workflows ────────────────────────────────────────────────
     @mcp.tool(
-        title="Delete Macro",
-        description="Delete a macro.",
-        annotations=ToolAnnotations(destructiveHint=True),
+        title="Workflows",
+        description=(
+            "Read organization and queue workflows (status graphs).\n\n"
+            "Actions:\n"
+            "- `list` → `{workflows: [...]}` — all workflows in the org\n"
+            "- `get_queue` → workflow or null; requires `queue_id`"
+        ),
     )
-    async def macro_delete(
+    async def workflows(
         ctx: Context[Any, AppContext],
-        queue_id: QueueID,
-        macro_id: MacroID,
-    ) -> dict[str, bool]:
-        check_queue_access(settings, queue_id)
-        await ctx.request_context.lifespan_context.automations.macro_delete(
-            queue_id, macro_id, auth=get_yandex_auth(ctx)
-        )
-        return {"ok": True}
+        action: WorkflowAction,
+        queue_id: Annotated[
+            str | None, Field(description="Queue key (get_queue)")
+        ] = None,
+    ) -> dict[str, Any]:
+        automations = ctx.request_context.lifespan_context.automations
+        auth = get_yandex_auth(ctx)
+
+        if action == "list":
+            items = await automations.workflows_list(auth=auth)
+            return {"workflows": _dump(items)}
+        if action == "get_queue":
+            qid = _require(queue_id, "queue_id", action)
+            check_queue_access(settings, qid)
+            item = await automations.queue_workflow_get(qid, auth=auth)
+            return {"workflow": _dump(item) if item is not None else None}
+        raise ValueError(f"Unknown action: {action}")

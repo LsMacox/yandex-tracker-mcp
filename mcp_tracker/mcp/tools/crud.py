@@ -126,9 +126,7 @@ def register_crud_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
                 raise ValueError(f"`component_id` is required for action `{action}`.")
             flds = _require(fields, "fields", action)
             if version is None:
-                current = await components_proto.component_get(
-                    component_id, auth=auth
-                )
+                current = await components_proto.component_get(component_id, auth=auth)
                 version = current.version
             item = await components_proto.component_update(
                 component_id, fields=flds, version=version, auth=auth

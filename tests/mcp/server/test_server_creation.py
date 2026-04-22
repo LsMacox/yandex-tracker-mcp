@@ -29,31 +29,25 @@ READ_ONLY_TOOL_NAMES = [
     "users_search",
     "user_get",
     "user_get_current",
-    # Board tools (4)
-    "boards_get_all",
-    "board_get",
-    "board_get_columns",
-    "board_get_sprints",
-    # Consolidated CRUD (components/filters/dashboards/sprints) — write gated internally (4)
+    # Consolidated CRUD (read+write, gated internally) — 4
     "components",
     "filters",
     "dashboards",
     "sprints",
+    # Consolidated boards + columns (read+write, gated internally) — 2
+    "boards",
+    "board_columns",
+    # Consolidated automations (read+write, gated internally) — 4
+    "triggers",
+    "autoactions",
+    "macros",
+    "workflows",
     # Project/entities tools (5)
     "projects_search",
     "portfolios_search",
     "goals_search",
     "entity_get",
     "projects_legacy_list",
-    # Automation read tools (8)
-    "triggers_list",
-    "trigger_get",
-    "autoactions_list",
-    "autoaction_get",
-    "macros_list",
-    "macro_get",
-    "workflows_list",
-    "queue_workflow_get",
 ]
 
 # Write tool names — only registered when not in read-only mode
@@ -64,29 +58,12 @@ WRITE_TOOL_NAMES = [
     "issue_create",
     "issue_update",
     "issue_move_to_queue",
-    # Board write (6)
-    "board_create",
-    "board_update",
-    "board_delete",
-    "board_column_create",
-    "board_column_update",
-    "board_column_delete",
     # Queue write (1)
     "queue_create",
     # Entity write (3)
     "entity_create",
     "entity_update",
     "entity_delete",
-    # Automation write (9)
-    "trigger_create",
-    "trigger_update",
-    "trigger_delete",
-    "autoaction_create",
-    "autoaction_update",
-    "autoaction_delete",
-    "macro_create",
-    "macro_update",
-    "macro_delete",
     # Bulk change (4)
     "bulk_update",
     "bulk_move",

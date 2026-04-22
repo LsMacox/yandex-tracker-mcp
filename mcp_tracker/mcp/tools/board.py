@@ -1,90 +1,225 @@
-"""Board and sprint MCP tools (read-only)."""
+"""Consolidated board + board_columns tools.
 
-from typing import Annotated, Any
+Replaces: boards_get_all, board_get, board_get_columns, board_get_sprints,
+board_create, board_update, board_delete, board_column_create/update/delete.
+"""
+
+from typing import Annotated, Any, Literal, TypeVar
 
 from mcp.server import FastMCP
 from mcp.server.fastmcp import Context
-from mcp.types import ToolAnnotations
-from pydantic import Field
+from pydantic import BaseModel, Field
 from starlette.requests import Request
 
 from mcp_tracker.mcp.context import AppContext
+from mcp_tracker.mcp.tools._access import require_write_mode
 from mcp_tracker.mcp.utils import get_yandex_auth
 from mcp_tracker.settings import Settings
-from mcp_tracker.tracker.proto.types.boards import (
-    Board,
-    BoardColumn,
-    Sprint,
-)
 
 BoardID = Annotated[
     int,
     Field(description="Numeric Yandex Tracker board identifier, e.g. 42"),
 ]
 
+BoardAction = Literal["list", "get", "columns", "sprints", "create", "update", "delete"]
+ColumnAction = Literal["create", "update", "delete"]
 
-def register_board_tools(_settings: Settings, mcp: FastMCP[Any]) -> None:
-    """Register board/sprint read-only tools."""
 
+_T = TypeVar("_T")
+
+
+def _dump(value: Any) -> Any:
+    if isinstance(value, BaseModel):
+        return value.model_dump(mode="json", by_alias=True)
+    if isinstance(value, list):
+        return [_dump(v) for v in value]
+    return value
+
+
+def _require(value: _T | None, name: str, action: str) -> _T:
+    if value is None:
+        raise ValueError(f"`{name}` is required for action `{action}`.")
+    return value
+
+
+def register_board_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
+    """Register consolidated boards + board_columns tools."""
+
+    # ─── boards ────────────────────────────────────────────────
     @mcp.tool(
-        title="Get All Boards",
-        description="List all agile task boards available in the organization. "
-        "Returns a `{'boards': [...]}` object.",
-        annotations=ToolAnnotations(readOnlyHint=True),
-    )
-    async def boards_get_all(
-        ctx: Context[Any, AppContext, Request],
-    ) -> dict[str, list[Board]]:
-        items = await ctx.request_context.lifespan_context.boards.boards_list(
-            auth=get_yandex_auth(ctx),
-        )
-        return {"boards": items}
-
-    @mcp.tool(
-        title="Get Board",
-        description="Get full parameters of a specific agile board by its numeric identifier.",
-        annotations=ToolAnnotations(readOnlyHint=True),
-    )
-    async def board_get(
-        ctx: Context[Any, AppContext, Request],
-        board_id: BoardID,
-    ) -> Board:
-        return await ctx.request_context.lifespan_context.boards.board_get(
-            board_id,
-            auth=get_yandex_auth(ctx),
-        )
-
-    @mcp.tool(
-        title="Get Board Columns",
-        description="Get all columns of the specified agile board with their linked issue statuses. "
-        "Returns a `{'columns': [...]}` object.",
-        annotations=ToolAnnotations(readOnlyHint=True),
-    )
-    async def board_get_columns(
-        ctx: Context[Any, AppContext, Request],
-        board_id: BoardID,
-    ) -> dict[str, list[BoardColumn]]:
-        items = await ctx.request_context.lifespan_context.boards.board_get_columns(
-            board_id,
-            auth=get_yandex_auth(ctx),
-        )
-        return {"columns": items}
-
-    @mcp.tool(
-        title="Get Board Sprints",
+        title="Boards",
         description=(
-            "List all sprints (draft, in_progress, released, archived) of the given agile board. "
-            "Returns a `{'sprints': [...]}` object. The `sprints` array is empty for boards "
-            "without a sprint setup (kanban, filter-only, etc.)."
+            "Manage agile boards and query their nested resources.\n\n"
+            "Actions:\n"
+            "- `list` → `{boards: [...]}` — all boards in org\n"
+            "- `get` → board; requires `board_id`\n"
+            "- `columns` → `{columns: [...]}`; requires `board_id`\n"
+            "- `sprints` → `{sprints: [...]}`; requires `board_id` "
+            "(empty for kanban/filter-only boards)\n"
+            "- `create` → board; requires `name`; typically also `filter` and "
+            "`non_parametrized_columns` ([{name, statuses:[...]}, ...])\n"
+            "- `update` → board; requires `board_id` and `fields`\n"
+            "- `delete` → `{ok: true}`; requires `board_id`"
         ),
-        annotations=ToolAnnotations(readOnlyHint=True),
     )
-    async def board_get_sprints(
+    async def boards(
         ctx: Context[Any, AppContext, Request],
+        action: BoardAction,
+        board_id: Annotated[
+            int | None,
+            Field(description="Board id (get/columns/sprints/update/delete)"),
+        ] = None,
+        name: Annotated[str | None, Field(description="Board name (create)")] = None,
+        filter: Annotated[
+            dict[str, Any] | None,
+            Field(description='Board filter, e.g. {"queue": "TEST"} (create)'),
+        ] = None,
+        non_parametrized_columns: Annotated[
+            list[dict[str, Any]] | None,
+            Field(description='Columns as [{"name": str, "statuses": [...]}] (create)'),
+        ] = None,
+        columns: Annotated[
+            list[dict[str, Any]] | None,
+            Field(description="Alternative column payload (create)"),
+        ] = None,
+        query: Annotated[
+            str | None, Field(description="YQL query limiting board issues (create)")
+        ] = None,
+        order_by: Annotated[
+            str | None, Field(description="Field key for ordering (create)")
+        ] = None,
+        order_asc: Annotated[
+            bool | None, Field(description="Ascending flag (create)")
+        ] = None,
+        use_ranking: Annotated[
+            bool | None, Field(description="Use ranking (create)")
+        ] = None,
+        estimate_by: Annotated[
+            str | None, Field(description="Estimation field key (create)")
+        ] = None,
+        flow: Annotated[str | None, Field(description="Flow id (create)")] = None,
+        fields: Annotated[
+            dict[str, Any] | None, Field(description="Fields to update (update)")
+        ] = None,
+        extra: Annotated[
+            dict[str, Any] | None, Field(description="Extra body fields (create)")
+        ] = None,
+    ) -> dict[str, Any]:
+        boards_proto = ctx.request_context.lifespan_context.boards
+        auth = get_yandex_auth(ctx)
+
+        def _need_id() -> int:
+            if board_id is None:
+                raise ValueError(f"`board_id` is required for action `{action}`.")
+            return board_id
+
+        if action == "list":
+            items = await boards_proto.boards_list(auth=auth)
+            return {"boards": _dump(items)}
+        if action == "get":
+            item = await boards_proto.board_get(_need_id(), auth=auth)
+            return {"board": _dump(item)}
+        if action == "columns":
+            cols = await boards_proto.board_get_columns(_need_id(), auth=auth)
+            return {"columns": _dump(cols)}
+        if action == "sprints":
+            sprints = await boards_proto.board_get_sprints(_need_id(), auth=auth)
+            return {"sprints": _dump(sprints)}
+
+        require_write_mode(settings, action)
+
+        if action == "create":
+            name_ = _require(name, "name", action)
+            item = await boards_proto.board_create(
+                name=name_,
+                filter=filter,
+                non_parametrized_columns=non_parametrized_columns,
+                columns=columns,
+                query=query,
+                order_by=order_by,
+                order_asc=order_asc,
+                use_ranking=use_ranking,
+                estimate_by=estimate_by,
+                flow=flow,
+                extra=extra,
+                auth=auth,
+            )
+            return {"board": _dump(item)}
+        if action == "update":
+            flds = _require(fields, "fields", action)
+            item = await boards_proto.board_update(_need_id(), fields=flds, auth=auth)
+            return {"board": _dump(item)}
+        if action == "delete":
+            await boards_proto.board_delete(_need_id(), auth=auth)
+            return {"ok": True}
+        raise ValueError(f"Unknown action: {action}")
+
+    # ─── board_columns ────────────────────────────────────────────────
+    @mcp.tool(
+        title="Board Columns",
+        description=(
+            "Create/update/delete agile board columns. Use `boards(action='columns', ...)` "
+            "to list existing columns.\n\n"
+            "Actions:\n"
+            "- `create` → column; requires `board_id`, `name`, `statuses`\n"
+            "- `update` → column; requires `board_id` and `column_id`; any of "
+            "`name`/`statuses`\n"
+            "- `delete` → `{ok: true}`; requires `board_id` and `column_id`\n\n"
+            "All actions accept optional `version` for If-Match optimistic lock."
+        ),
+    )
+    async def board_columns(
+        ctx: Context[Any, AppContext, Request],
+        action: ColumnAction,
         board_id: BoardID,
-    ) -> dict[str, list[Sprint]]:
-        items = await ctx.request_context.lifespan_context.boards.board_get_sprints(
-            board_id,
-            auth=get_yandex_auth(ctx),
-        )
-        return {"sprints": items}
+        column_id: Annotated[
+            int | None, Field(description="Column id (update/delete)")
+        ] = None,
+        name: Annotated[
+            str | None, Field(description="Column name (create/update)")
+        ] = None,
+        statuses: Annotated[
+            list[str] | None,
+            Field(description="Status keys in column (create/update)"),
+        ] = None,
+        version: Annotated[
+            str | int | None,
+            Field(description="Board version for If-Match optimistic lock"),
+        ] = None,
+    ) -> dict[str, Any]:
+        require_write_mode(settings, action)
+        boards_proto = ctx.request_context.lifespan_context.boards
+        auth = get_yandex_auth(ctx)
+
+        def _need_col() -> int:
+            if column_id is None:
+                raise ValueError(f"`column_id` is required for action `{action}`.")
+            return column_id
+
+        if action == "create":
+            name_ = _require(name, "name", action)
+            statuses_ = _require(statuses, "statuses", action)
+            item = await boards_proto.board_column_create(
+                board_id,
+                name=name_,
+                statuses=statuses_,
+                version=version,
+                auth=auth,
+            )
+            return {"column": _dump(item)}
+        if action == "update":
+            item = await boards_proto.board_column_update(
+                board_id,
+                _need_col(),
+                name=name,
+                statuses=statuses,
+                version=version,
+                auth=auth,
+            )
+            return {"column": _dump(item)}
+        if action == "delete":
+            await boards_proto.board_column_delete(
+                board_id, _need_col(), version=version, auth=auth
+            )
+            return {"ok": True}
+        raise ValueError(f"Unknown action: {action}")
