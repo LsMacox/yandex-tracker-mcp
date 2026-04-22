@@ -13,6 +13,15 @@ from mcp.types import CallToolResult
 from mcp_tracker.mcp.context import AppContext
 from mcp_tracker.mcp.server import Lifespan, create_mcp_server
 from mcp_tracker.settings import Settings
+from mcp_tracker.tracker.proto.boards import BoardsProtocol
+from mcp_tracker.tracker.proto.extras import (
+    AutomationsProtocol,
+    BulkChangeProtocol,
+    ComponentsProtocol,
+    DashboardsProtocol,
+    EntitiesProtocol,
+    FiltersProtocol,
+)
 from mcp_tracker.tracker.proto.fields import GlobalDataProtocol
 from mcp_tracker.tracker.proto.issues import IssueProtocol
 from mcp_tracker.tracker.proto.queues import QueuesProtocol
@@ -125,11 +134,54 @@ def mock_users_protocol() -> AsyncMock:
 
 
 @pytest.fixture
+def mock_boards_protocol() -> AsyncMock:
+    """Create a mock BoardsProtocol."""
+    return AsyncMock(spec=BoardsProtocol)
+
+
+@pytest.fixture
+def mock_filters_protocol() -> AsyncMock:
+    return AsyncMock(spec=FiltersProtocol)
+
+
+@pytest.fixture
+def mock_components_protocol() -> AsyncMock:
+    return AsyncMock(spec=ComponentsProtocol)
+
+
+@pytest.fixture
+def mock_entities_protocol() -> AsyncMock:
+    return AsyncMock(spec=EntitiesProtocol)
+
+
+@pytest.fixture
+def mock_dashboards_protocol() -> AsyncMock:
+    return AsyncMock(spec=DashboardsProtocol)
+
+
+@pytest.fixture
+def mock_automations_protocol() -> AsyncMock:
+    return AsyncMock(spec=AutomationsProtocol)
+
+
+@pytest.fixture
+def mock_bulkchange_protocol() -> AsyncMock:
+    return AsyncMock(spec=BulkChangeProtocol)
+
+
+@pytest.fixture
 def mock_app_context(
     mock_queues_protocol: AsyncMock,
     mock_issues_protocol: AsyncMock,
     mock_fields_protocol: AsyncMock,
     mock_users_protocol: AsyncMock,
+    mock_boards_protocol: AsyncMock,
+    mock_filters_protocol: AsyncMock,
+    mock_components_protocol: AsyncMock,
+    mock_entities_protocol: AsyncMock,
+    mock_dashboards_protocol: AsyncMock,
+    mock_automations_protocol: AsyncMock,
+    mock_bulkchange_protocol: AsyncMock,
 ) -> AppContext:
     """Create AppContext with mock protocols."""
     return AppContext(
@@ -137,6 +189,13 @@ def mock_app_context(
         issues=mock_issues_protocol,
         fields=mock_fields_protocol,
         users=mock_users_protocol,
+        boards=mock_boards_protocol,
+        filters=mock_filters_protocol,
+        components=mock_components_protocol,
+        entities=mock_entities_protocol,
+        dashboards=mock_dashboards_protocol,
+        automations=mock_automations_protocol,
+        bulkchange=mock_bulkchange_protocol,
     )
 
 

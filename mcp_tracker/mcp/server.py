@@ -19,6 +19,15 @@ from mcp_tracker.mcp.tools import register_all_tools
 from mcp_tracker.settings import Settings
 from mcp_tracker.tracker.caching.client import make_cached_protocols
 from mcp_tracker.tracker.custom.client import ServiceAccountSettings, TrackerClient
+from mcp_tracker.tracker.proto.boards import BoardsProtocol
+from mcp_tracker.tracker.proto.extras import (
+    AutomationsProtocol,
+    BulkChangeProtocol,
+    ComponentsProtocol,
+    DashboardsProtocol,
+    EntitiesProtocol,
+    FiltersProtocol,
+)
 from mcp_tracker.tracker.proto.fields import GlobalDataProtocol
 from mcp_tracker.tracker.proto.issues import IssueProtocol
 from mcp_tracker.tracker.proto.queues import QueuesProtocol
@@ -81,12 +90,26 @@ def make_tracker_lifespan(settings: Settings) -> Lifespan:
         issues: IssueProtocol = tracker
         global_data: GlobalDataProtocol = tracker
         users: UsersProtocol = tracker
+        boards: BoardsProtocol = tracker
+        filters: FiltersProtocol = tracker
+        components: ComponentsProtocol = tracker
+        entities: EntitiesProtocol = tracker
+        dashboards: DashboardsProtocol = tracker
+        automations: AutomationsProtocol = tracker
+        bulkchange: BulkChangeProtocol = tracker
         if settings.tools_cache_enabled:
             cache_collection = make_cached_protocols(settings.cache_kwargs())
             queues = cache_collection.queues(queues)
             issues = cache_collection.issues(issues)
             global_data = cache_collection.global_data(global_data)
             users = cache_collection.users(users)
+            boards = cache_collection.boards(boards)
+            filters = cache_collection.filters(filters)
+            components = cache_collection.components(components)
+            entities = cache_collection.entities(entities)
+            dashboards = cache_collection.dashboards(dashboards)
+            automations = cache_collection.automations(automations)
+            bulkchange = cache_collection.bulkchange(bulkchange)
 
         try:
             await tracker.prepare()
@@ -96,6 +119,13 @@ def make_tracker_lifespan(settings: Settings) -> Lifespan:
                 issues=issues,
                 fields=global_data,
                 users=users,
+                boards=boards,
+                filters=filters,
+                components=components,
+                entities=entities,
+                dashboards=dashboards,
+                automations=automations,
+                bulkchange=bulkchange,
             )
         finally:
             await tracker.close()

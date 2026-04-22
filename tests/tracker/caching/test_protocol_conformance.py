@@ -5,6 +5,15 @@ from unittest.mock import AsyncMock
 import pytest
 
 from mcp_tracker.tracker.caching.client import make_cached_protocols
+from mcp_tracker.tracker.proto.boards import BoardsProtocol
+from mcp_tracker.tracker.proto.extras import (
+    AutomationsProtocol,
+    BulkChangeProtocol,
+    ComponentsProtocol,
+    DashboardsProtocol,
+    EntitiesProtocol,
+    FiltersProtocol,
+)
 from mcp_tracker.tracker.proto.fields import GlobalDataProtocol
 from mcp_tracker.tracker.proto.issues import IssueProtocol
 from mcp_tracker.tracker.proto.queues import QueuesProtocol
@@ -51,3 +60,53 @@ class TestCachingProtocolConformance:
         instance = cache_collection.users(mock_original)
 
         assert isinstance(instance, UsersProtocol)
+
+    def test_caching_boards_implements_protocol(
+        self, cache_config: dict[str, int], mock_original: BoardsProtocol
+    ) -> None:
+        cache_collection = make_cached_protocols(cache_config)
+        instance = cache_collection.boards(mock_original)
+
+        assert isinstance(instance, BoardsProtocol)
+
+    def test_caching_filters_implements_protocol(
+        self, cache_config: dict[str, int], mock_original: FiltersProtocol
+    ) -> None:
+        cache_collection = make_cached_protocols(cache_config)
+        instance = cache_collection.filters(mock_original)
+        assert isinstance(instance, FiltersProtocol)
+
+    def test_caching_components_implements_protocol(
+        self, cache_config: dict[str, int], mock_original: ComponentsProtocol
+    ) -> None:
+        cache_collection = make_cached_protocols(cache_config)
+        instance = cache_collection.components(mock_original)
+        assert isinstance(instance, ComponentsProtocol)
+
+    def test_caching_entities_implements_protocol(
+        self, cache_config: dict[str, int], mock_original: EntitiesProtocol
+    ) -> None:
+        cache_collection = make_cached_protocols(cache_config)
+        instance = cache_collection.entities(mock_original)
+        assert isinstance(instance, EntitiesProtocol)
+
+    def test_caching_dashboards_implements_protocol(
+        self, cache_config: dict[str, int], mock_original: DashboardsProtocol
+    ) -> None:
+        cache_collection = make_cached_protocols(cache_config)
+        instance = cache_collection.dashboards(mock_original)
+        assert isinstance(instance, DashboardsProtocol)
+
+    def test_caching_automations_implements_protocol(
+        self, cache_config: dict[str, int], mock_original: AutomationsProtocol
+    ) -> None:
+        cache_collection = make_cached_protocols(cache_config)
+        instance = cache_collection.automations(mock_original)
+        assert isinstance(instance, AutomationsProtocol)
+
+    def test_caching_bulkchange_implements_protocol(
+        self, cache_config: dict[str, int], mock_original: BulkChangeProtocol
+    ) -> None:
+        cache_collection = make_cached_protocols(cache_config)
+        instance = cache_collection.bulkchange(mock_original)
+        assert isinstance(instance, BulkChangeProtocol)

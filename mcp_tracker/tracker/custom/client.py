@@ -1,6 +1,7 @@
 import asyncio
 import datetime
 import logging
+import os
 import random
 import time
 from asyncio import CancelledError
@@ -9,16 +10,26 @@ from typing import Any, Literal
 
 import jwt
 import yandexcloud
-from aiohttp import ClientSession, ClientTimeout
+from aiohttp import ClientSession, ClientTimeout, FormData
 from pydantic import BaseModel, RootModel
 from yandex.cloud.iam.v1.iam_token_service_pb2 import CreateIamTokenRequest
 from yandex.cloud.iam.v1.iam_token_service_pb2_grpc import IamTokenServiceStub
 
 from mcp_tracker.tracker.custom.errors import IssueNotFound
+from mcp_tracker.tracker.proto.boards import BoardsProtocol
 from mcp_tracker.tracker.proto.common import YandexAuth
+from mcp_tracker.tracker.proto.extras import (
+    AutomationsProtocol,
+    BulkChangeProtocol,
+    ComponentsProtocol,
+    DashboardsProtocol,
+    EntitiesProtocol,
+    FiltersProtocol,
+)
 from mcp_tracker.tracker.proto.fields import GlobalDataProtocol
 from mcp_tracker.tracker.proto.issues import IssueProtocol
 from mcp_tracker.tracker.proto.queues import QueuesProtocol
+from mcp_tracker.tracker.proto.types.boards import Board, BoardColumn, Sprint
 from mcp_tracker.tracker.proto.types.fields import GlobalField, LocalField
 from mcp_tracker.tracker.proto.types.inputs import (
     IssueUpdateFollower,
@@ -37,6 +48,21 @@ from mcp_tracker.tracker.proto.types.issues import (
     IssueLink,
     IssueTransition,
     Worklog,
+)
+from mcp_tracker.tracker.proto.types.misc import (
+    Autoaction,
+    BulkChangeResult,
+    Component,
+    Dashboard,
+    DashboardWidget,
+    Goal,
+    IssueFilter,
+    Macro,
+    Portfolio,
+    Project,
+    ProjectLegacy,
+    Trigger,
+    Workflow,
 )
 from mcp_tracker.tracker.proto.types.priorities import Priority
 from mcp_tracker.tracker.proto.types.queues import (
@@ -66,6 +92,19 @@ PriorityList = RootModel[list[Priority]]
 ResolutionList = RootModel[list[Resolution]]
 UserList = RootModel[list[User]]
 IssueTransitionList = RootModel[list[IssueTransition]]
+BoardList = RootModel[list[Board]]
+BoardColumnList = RootModel[list[BoardColumn]]
+SprintList = RootModel[list[Sprint]]
+FilterList = RootModel[list[IssueFilter]]
+ComponentList = RootModel[list[Component]]
+ProjectLegacyList = RootModel[list[ProjectLegacy]]
+DashboardList = RootModel[list[Dashboard]]
+DashboardWidgetList = RootModel[list[DashboardWidget]]
+TriggerList = RootModel[list[Trigger]]
+AutoactionList = RootModel[list[Autoaction]]
+MacroList = RootModel[list[Macro]]
+WorkflowList = RootModel[list[Workflow]]
+EntityList = RootModel[list[dict[str, Any]]]
 
 
 logger = logging.getLogger(__name__)
@@ -175,7 +214,19 @@ class ServiceAccountStore:
         return IAMTokenInfo(token=iam_token.iam_token)
 
 
-class TrackerClient(QueuesProtocol, IssueProtocol, GlobalDataProtocol, UsersProtocol):
+class TrackerClient(
+    QueuesProtocol,
+    IssueProtocol,
+    GlobalDataProtocol,
+    UsersProtocol,
+    BoardsProtocol,
+    FiltersProtocol,
+    ComponentsProtocol,
+    EntitiesProtocol,
+    DashboardsProtocol,
+    AutomationsProtocol,
+    BulkChangeProtocol,
+):
     def __init__(
         self,
         *,
@@ -479,8 +530,11 @@ class TrackerClient(QueuesProtocol, IssueProtocol, GlobalDataProtocol, UsersProt
 
     async def issues_find(
         self,
-        query: str,
+        query: str | None = None,
         *,
+        filter: dict[str, Any] | None = None,
+        order: list[str] | None = None,
+        keys: list[str] | None = None,
         per_page: int = 15,
         page: int = 1,
         auth: YandexAuth | None = None,
@@ -490,9 +544,15 @@ class TrackerClient(QueuesProtocol, IssueProtocol, GlobalDataProtocol, UsersProt
             "page": page,
         }
 
-        body: dict[str, Any] = {
-            "query": query,
-        }
+        body: dict[str, Any] = {}
+        if query is not None:
+            body["query"] = query
+        if filter is not None:
+            body["filter"] = filter
+        if order is not None:
+            body["order"] = order
+        if keys is not None:
+            body["keys"] = keys
 
         async with self._session.post(
             "v3/issues/_search",
@@ -862,3 +922,1250 @@ class TrackerClient(QueuesProtocol, IssueProtocol, GlobalDataProtocol, UsersProt
                 raise IssueNotFound(issue_id)
             response.raise_for_status()
             return Issue.model_validate_json(await response.read())
+
+    # --- issue links write ---
+    async def issue_add_link(
+        self,
+        issue_id: str,
+        *,
+        relationship: str,
+        target_issue: str,
+        auth: YandexAuth | None = None,
+    ) -> IssueLink:
+        body = {"relationship": relationship, "issue": target_issue}
+        async with self._session.post(
+            f"v3/issues/{issue_id}/links",
+            headers=await self._build_headers(auth),
+            json=body,
+        ) as response:
+            if response.status == 404:
+                raise IssueNotFound(issue_id)
+            response.raise_for_status()
+            data = await response.read()
+        try:
+            return IssueLink.model_validate_json(data)
+        except Exception:
+            links = IssueLinkList.model_validate_json(data).root
+            if not links:
+                raise
+            return links[-1]
+
+    async def issue_delete_link(
+        self,
+        issue_id: str,
+        link_id: int,
+        *,
+        auth: YandexAuth | None = None,
+    ) -> None:
+        async with self._session.delete(
+            f"v3/issues/{issue_id}/links/{link_id}",
+            headers=await self._build_headers(auth),
+        ) as response:
+            if response.status == 404:
+                raise IssueNotFound(issue_id)
+            response.raise_for_status()
+
+    # --- checklist write ---
+    async def issue_add_checklist_item(
+        self,
+        issue_id: str,
+        *,
+        text: str,
+        checked: bool | None = None,
+        assignee: str | int | None = None,
+        deadline: dict[str, Any] | None = None,
+        auth: YandexAuth | None = None,
+    ) -> list[ChecklistItem]:
+        body: dict[str, Any] = {"text": text}
+        if checked is not None:
+            body["checked"] = checked
+        if assignee is not None:
+            body["assignee"] = assignee
+        if deadline is not None:
+            body["deadline"] = deadline
+
+        async with self._session.post(
+            f"v3/issues/{issue_id}/checklistItems",
+            headers=await self._build_headers(auth),
+            json=body,
+        ) as response:
+            if response.status == 404:
+                raise IssueNotFound(issue_id)
+            response.raise_for_status()
+            return ChecklistItemList.model_validate_json(await response.read()).root
+
+    async def issue_update_checklist_item(
+        self,
+        issue_id: str,
+        item_id: str,
+        *,
+        text: str | None = None,
+        checked: bool | None = None,
+        assignee: str | int | None = None,
+        deadline: dict[str, Any] | None = None,
+        auth: YandexAuth | None = None,
+    ) -> list[ChecklistItem]:
+        body: dict[str, Any] = {}
+        if text is not None:
+            body["text"] = text
+        if checked is not None:
+            body["checked"] = checked
+        if assignee is not None:
+            body["assignee"] = assignee
+        if deadline is not None:
+            body["deadline"] = deadline
+
+        async with self._session.patch(
+            f"v3/issues/{issue_id}/checklistItems/{item_id}",
+            headers=await self._build_headers(auth),
+            json=body,
+        ) as response:
+            if response.status == 404:
+                raise IssueNotFound(issue_id)
+            response.raise_for_status()
+            return ChecklistItemList.model_validate_json(await response.read()).root
+
+    async def issue_delete_checklist_item(
+        self,
+        issue_id: str,
+        item_id: str,
+        *,
+        auth: YandexAuth | None = None,
+    ) -> list[ChecklistItem] | None:
+        async with self._session.delete(
+            f"v3/issues/{issue_id}/checklistItems/{item_id}",
+            headers=await self._build_headers(auth),
+        ) as response:
+            if response.status == 404:
+                raise IssueNotFound(issue_id)
+            response.raise_for_status()
+            data = await response.read()
+        if not data:
+            return None
+        try:
+            return ChecklistItemList.model_validate_json(data).root
+        except Exception:
+            return None
+
+    async def issue_clear_checklist(
+        self,
+        issue_id: str,
+        *,
+        auth: YandexAuth | None = None,
+    ) -> None:
+        async with self._session.delete(
+            f"v3/issues/{issue_id}/checklistItems",
+            headers=await self._build_headers(auth),
+        ) as response:
+            if response.status == 404:
+                raise IssueNotFound(issue_id)
+            response.raise_for_status()
+
+    # --- attachments CRUD ---
+    async def issue_upload_attachment(
+        self,
+        issue_id: str,
+        *,
+        file_path: str,
+        filename: str | None = None,
+        auth: YandexAuth | None = None,
+    ) -> IssueAttachment:
+        filename = filename or os.path.basename(file_path)
+        form = FormData()
+        form.add_field(
+            "file",
+            open(file_path, "rb"),  # noqa: SIM115
+            filename=filename,
+        )
+        async with self._session.post(
+            f"v3/issues/{issue_id}/attachments",
+            headers=await self._build_headers(auth),
+            data=form,
+        ) as response:
+            if response.status == 404:
+                raise IssueNotFound(issue_id)
+            response.raise_for_status()
+            return IssueAttachment.model_validate_json(await response.read())
+
+    async def issue_delete_attachment(
+        self,
+        issue_id: str,
+        attachment_id: str,
+        *,
+        auth: YandexAuth | None = None,
+    ) -> None:
+        async with self._session.delete(
+            f"v3/issues/{issue_id}/attachments/{attachment_id}",
+            headers=await self._build_headers(auth),
+        ) as response:
+            if response.status == 404:
+                raise IssueNotFound(issue_id)
+            response.raise_for_status()
+
+    async def issue_download_attachment(
+        self,
+        issue_id: str,
+        attachment_id: str,
+        filename: str,
+        *,
+        dest_path: str,
+        auth: YandexAuth | None = None,
+    ) -> str:
+        async with self._session.get(
+            f"v3/issues/{issue_id}/attachments/{attachment_id}/{filename}",
+            headers=await self._build_headers(auth),
+        ) as response:
+            if response.status == 404:
+                raise IssueNotFound(issue_id)
+            response.raise_for_status()
+            data = await response.read()
+
+        if os.path.isdir(dest_path):
+            dest_path = os.path.join(dest_path, filename)
+        with open(dest_path, "wb") as fh:
+            fh.write(data)
+        return dest_path
+
+    # --- misc issue ops ---
+    async def issue_add_tags(
+        self,
+        issue_id: str,
+        tags: list[str],
+        *,
+        auth: YandexAuth | None = None,
+    ) -> Issue:
+        body = {"tags": {"add": tags}}
+        async with self._session.patch(
+            f"v3/issues/{issue_id}",
+            headers=await self._build_headers(auth),
+            json=body,
+        ) as response:
+            if response.status == 404:
+                raise IssueNotFound(issue_id)
+            response.raise_for_status()
+            return Issue.model_validate_json(await response.read())
+
+    async def issue_remove_tags(
+        self,
+        issue_id: str,
+        tags: list[str],
+        *,
+        auth: YandexAuth | None = None,
+    ) -> Issue:
+        body = {"tags": {"remove": tags}}
+        async with self._session.patch(
+            f"v3/issues/{issue_id}",
+            headers=await self._build_headers(auth),
+            json=body,
+        ) as response:
+            if response.status == 404:
+                raise IssueNotFound(issue_id)
+            response.raise_for_status()
+            return Issue.model_validate_json(await response.read())
+
+    async def issue_move_to_queue(
+        self,
+        issue_id: str,
+        queue: str,
+        *,
+        move_all_fields: bool | None = None,
+        initial_status: bool | None = None,
+        expand: list[str] | None = None,
+        notify: bool | None = None,
+        extra: dict[str, Any] | None = None,
+        auth: YandexAuth | None = None,
+    ) -> Issue:
+        body: dict[str, Any] = {"queue": queue}
+        if extra:
+            for k, v in extra.items():
+                body.setdefault(k, v)
+
+        params: dict[str, Any] = {}
+        if move_all_fields is not None:
+            params["moveAllFields"] = str(move_all_fields).lower()
+        if initial_status is not None:
+            params["initialStatus"] = str(initial_status).lower()
+        if expand:
+            params["expand"] = ",".join(expand)
+        if notify is not None:
+            params["notify"] = str(notify).lower()
+
+        async with self._session.post(
+            f"v3/issues/{issue_id}/_move",
+            headers=await self._build_headers(auth),
+            json=body,
+            params=params if params else None,
+        ) as response:
+            if response.status == 404:
+                raise IssueNotFound(issue_id)
+            response.raise_for_status()
+            return Issue.model_validate_json(await response.read())
+
+    async def boards_list(self, *, auth: YandexAuth | None = None) -> list[Board]:
+        async with self._session.get(
+            "v3/boards", headers=await self._build_headers(auth)
+        ) as response:
+            response.raise_for_status()
+            return BoardList.model_validate_json(await response.read()).root
+
+    async def board_get(
+        self, board_id: int, *, auth: YandexAuth | None = None
+    ) -> Board:
+        async with self._session.get(
+            f"v3/boards/{board_id}", headers=await self._build_headers(auth)
+        ) as response:
+            response.raise_for_status()
+            return Board.model_validate_json(await response.read())
+
+    async def board_get_columns(
+        self, board_id: int, *, auth: YandexAuth | None = None
+    ) -> list[BoardColumn]:
+        async with self._session.get(
+            f"v3/boards/{board_id}/columns",
+            headers=await self._build_headers(auth),
+        ) as response:
+            response.raise_for_status()
+            return BoardColumnList.model_validate_json(await response.read()).root
+
+    async def board_get_sprints(
+        self, board_id: int, *, auth: YandexAuth | None = None
+    ) -> list[Sprint]:
+        async with self._session.get(
+            f"v3/boards/{board_id}/sprints",
+            headers=await self._build_headers(auth),
+        ) as response:
+            response.raise_for_status()
+            return SprintList.model_validate_json(await response.read()).root
+
+    async def sprint_get(
+        self, sprint_id: str, *, auth: YandexAuth | None = None
+    ) -> Sprint:
+        async with self._session.get(
+            f"v3/sprints/{sprint_id}", headers=await self._build_headers(auth)
+        ) as response:
+            response.raise_for_status()
+            return Sprint.model_validate_json(await response.read())
+
+    async def board_create(
+        self,
+        *,
+        name: str,
+        filter: dict[str, Any] | None = None,
+        non_parametrized_columns: list[dict[str, Any]] | None = None,
+        columns: list[dict[str, Any]] | None = None,
+        query: str | None = None,
+        order_by: str | None = None,
+        order_asc: bool | None = None,
+        use_ranking: bool | None = None,
+        estimate_by: str | None = None,
+        flow: str | None = None,
+        extra: dict[str, Any] | None = None,
+        auth: YandexAuth | None = None,
+    ) -> Board:
+        body: dict[str, Any] = {"name": name}
+        if filter is not None:
+            body["filter"] = filter
+        if non_parametrized_columns is not None:
+            body["nonParametrizedColumns"] = non_parametrized_columns
+        if columns is not None:
+            body["columns"] = columns
+        if query is not None:
+            body["query"] = query
+        if order_by is not None:
+            body["orderBy"] = order_by
+        if order_asc is not None:
+            body["orderAsc"] = order_asc
+        if use_ranking is not None:
+            body["useRanking"] = use_ranking
+        if estimate_by is not None:
+            body["estimateBy"] = estimate_by
+        if flow is not None:
+            body["flow"] = flow
+        if extra:
+            for k, v in extra.items():
+                body.setdefault(k, v)
+
+        async with self._session.post(
+            "v3/boards", headers=await self._build_headers(auth), json=body
+        ) as response:
+            response.raise_for_status()
+            return Board.model_validate_json(await response.read())
+
+    async def board_update(
+        self,
+        board_id: int,
+        *,
+        fields: dict[str, Any],
+        auth: YandexAuth | None = None,
+    ) -> Board:
+        async with self._session.patch(
+            f"v3/boards/{board_id}",
+            headers=await self._build_headers(auth),
+            json=fields,
+        ) as response:
+            response.raise_for_status()
+            return Board.model_validate_json(await response.read())
+
+    async def board_delete(
+        self, board_id: int, *, auth: YandexAuth | None = None
+    ) -> None:
+        async with self._session.delete(
+            f"v3/boards/{board_id}", headers=await self._build_headers(auth)
+        ) as response:
+            response.raise_for_status()
+
+    async def board_column_create(
+        self,
+        board_id: int,
+        *,
+        name: str,
+        statuses: list[str],
+        version: str | int | None = None,
+        auth: YandexAuth | None = None,
+    ) -> BoardColumn:
+        headers = await self._build_headers(auth)
+        if version is not None:
+            headers["If-Match"] = f'"{version}"'
+
+        async with self._session.post(
+            f"v3/boards/{board_id}/columns/",
+            headers=headers,
+            json={"name": name, "statuses": statuses},
+        ) as response:
+            response.raise_for_status()
+            return BoardColumn.model_validate_json(await response.read())
+
+    async def board_column_update(
+        self,
+        board_id: int,
+        column_id: int,
+        *,
+        name: str | None = None,
+        statuses: list[str] | None = None,
+        version: str | int | None = None,
+        auth: YandexAuth | None = None,
+    ) -> BoardColumn:
+        headers = await self._build_headers(auth)
+        if version is not None:
+            headers["If-Match"] = f'"{version}"'
+
+        body: dict[str, Any] = {}
+        if name is not None:
+            body["name"] = name
+        if statuses is not None:
+            body["statuses"] = statuses
+
+        async with self._session.patch(
+            f"v3/boards/{board_id}/columns/{column_id}",
+            headers=headers,
+            json=body,
+        ) as response:
+            response.raise_for_status()
+            return BoardColumn.model_validate_json(await response.read())
+
+    async def board_column_delete(
+        self,
+        board_id: int,
+        column_id: int,
+        *,
+        version: str | int | None = None,
+        auth: YandexAuth | None = None,
+    ) -> None:
+        headers = await self._build_headers(auth)
+        if version is not None:
+            headers["If-Match"] = f'"{version}"'
+
+        async with self._session.delete(
+            f"v3/boards/{board_id}/columns/{column_id}",
+            headers=headers,
+        ) as response:
+            response.raise_for_status()
+
+    async def sprint_create(
+        self,
+        board_id: int,
+        *,
+        name: str,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        start_date_time: str | None = None,
+        end_date_time: str | None = None,
+        extra: dict[str, Any] | None = None,
+        auth: YandexAuth | None = None,
+    ) -> Sprint:
+        body: dict[str, Any] = {"name": name}
+        if start_date is not None:
+            body["startDate"] = start_date
+        if end_date is not None:
+            body["endDate"] = end_date
+        if start_date_time is not None:
+            body["startDateTime"] = start_date_time
+        if end_date_time is not None:
+            body["endDateTime"] = end_date_time
+        if extra:
+            for k, v in extra.items():
+                body.setdefault(k, v)
+
+        async with self._session.post(
+            f"v3/boards/{board_id}/sprints",
+            headers=await self._build_headers(auth),
+            json=body,
+        ) as response:
+            response.raise_for_status()
+            return Sprint.model_validate_json(await response.read())
+
+    # --- filters ---
+    async def filters_list(
+        self, *, auth: YandexAuth | None = None
+    ) -> list[IssueFilter]:
+        async with self._session.get(
+            "v3/filters", headers=await self._build_headers(auth)
+        ) as response:
+            response.raise_for_status()
+            return FilterList.model_validate_json(await response.read()).root
+
+    async def filter_get(
+        self, filter_id: str, *, auth: YandexAuth | None = None
+    ) -> IssueFilter:
+        async with self._session.get(
+            f"v3/filters/{filter_id}", headers=await self._build_headers(auth)
+        ) as response:
+            response.raise_for_status()
+            return IssueFilter.model_validate_json(await response.read())
+
+    async def filter_create(
+        self,
+        *,
+        name: str,
+        query: str,
+        owner: str | dict[str, Any] | None = None,
+        extra: dict[str, Any] | None = None,
+        auth: YandexAuth | None = None,
+    ) -> IssueFilter:
+        body: dict[str, Any] = {"name": name, "query": query}
+        if owner is not None:
+            body["owner"] = owner
+        if extra:
+            for k, v in extra.items():
+                body.setdefault(k, v)
+        async with self._session.post(
+            "v3/filters",
+            headers=await self._build_headers(auth),
+            json=body,
+        ) as response:
+            response.raise_for_status()
+            return IssueFilter.model_validate_json(await response.read())
+
+    async def filter_update(
+        self,
+        filter_id: str,
+        *,
+        fields: dict[str, Any],
+        auth: YandexAuth | None = None,
+    ) -> IssueFilter:
+        async with self._session.patch(
+            f"v3/filters/{filter_id}",
+            headers=await self._build_headers(auth),
+            json=fields,
+        ) as response:
+            response.raise_for_status()
+            return IssueFilter.model_validate_json(await response.read())
+
+    async def filter_delete(
+        self, filter_id: str, *, auth: YandexAuth | None = None
+    ) -> None:
+        async with self._session.delete(
+            f"v3/filters/{filter_id}", headers=await self._build_headers(auth)
+        ) as response:
+            response.raise_for_status()
+
+    # --- components ---
+    async def components_list(
+        self,
+        *,
+        per_page: int = 50,
+        page: int = 1,
+        auth: YandexAuth | None = None,
+    ) -> list[Component]:
+        params = {"perPage": per_page, "page": page}
+        async with self._session.get(
+            "v3/components",
+            headers=await self._build_headers(auth),
+            params=params,
+        ) as response:
+            response.raise_for_status()
+            return ComponentList.model_validate_json(await response.read()).root
+
+    async def component_get(
+        self, component_id: str | int, *, auth: YandexAuth | None = None
+    ) -> Component:
+        async with self._session.get(
+            f"v3/components/{component_id}",
+            headers=await self._build_headers(auth),
+        ) as response:
+            response.raise_for_status()
+            return Component.model_validate_json(await response.read())
+
+    async def component_create(
+        self,
+        *,
+        name: str,
+        queue: str,
+        description: str | None = None,
+        lead: str | None = None,
+        assign_auto: bool | None = None,
+        extra: dict[str, Any] | None = None,
+        auth: YandexAuth | None = None,
+    ) -> Component:
+        body: dict[str, Any] = {"name": name, "queue": queue}
+        if description is not None:
+            body["description"] = description
+        if lead is not None:
+            body["lead"] = lead
+        if assign_auto is not None:
+            body["assignAuto"] = assign_auto
+        if extra:
+            for k, v in extra.items():
+                body.setdefault(k, v)
+        async with self._session.post(
+            "v3/components",
+            headers=await self._build_headers(auth),
+            json=body,
+        ) as response:
+            response.raise_for_status()
+            return Component.model_validate_json(await response.read())
+
+    async def component_update(
+        self,
+        component_id: str | int,
+        *,
+        fields: dict[str, Any],
+        auth: YandexAuth | None = None,
+    ) -> Component:
+        async with self._session.patch(
+            f"v3/components/{component_id}",
+            headers=await self._build_headers(auth),
+            json=fields,
+        ) as response:
+            response.raise_for_status()
+            return Component.model_validate_json(await response.read())
+
+    async def component_delete(
+        self, component_id: str | int, *, auth: YandexAuth | None = None
+    ) -> None:
+        async with self._session.delete(
+            f"v3/components/{component_id}",
+            headers=await self._build_headers(auth),
+        ) as response:
+            response.raise_for_status()
+
+    # --- entities (projects/portfolios/goals, new API) ---
+    async def entities_search(
+        self,
+        entity_type: str,
+        *,
+        filter: dict[str, Any] | None = None,
+        order: list[str] | None = None,
+        per_page: int = 50,
+        page: int = 1,
+        fields: list[str] | None = None,
+        root_only: bool | None = None,
+        expand: list[str] | None = None,
+        auth: YandexAuth | None = None,
+    ) -> list[dict[str, Any]]:
+        body: dict[str, Any] = {}
+        if filter is not None:
+            body["filter"] = filter
+        if order is not None:
+            body["order"] = order
+
+        params: dict[str, Any] = {"perPage": per_page, "page": page}
+        if fields:
+            params["fields"] = ",".join(fields)
+        if root_only is not None:
+            params["rootOnly"] = str(root_only).lower()
+        if expand:
+            params["expand"] = ",".join(expand)
+
+        async with self._session.post(
+            f"v3/entities/{entity_type}/_search",
+            headers=await self._build_headers(auth),
+            json=body,
+            params=params,
+        ) as response:
+            response.raise_for_status()
+            return EntityList.model_validate_json(await response.read()).root
+
+    async def entity_get(
+        self,
+        entity_type: str,
+        entity_id: str,
+        *,
+        fields: list[str] | None = None,
+        expand: list[str] | None = None,
+        auth: YandexAuth | None = None,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {}
+        if fields:
+            params["fields"] = ",".join(fields)
+        if expand:
+            params["expand"] = ",".join(expand)
+        async with self._session.get(
+            f"v3/entities/{entity_type}/{entity_id}",
+            headers=await self._build_headers(auth),
+            params=params if params else None,
+        ) as response:
+            response.raise_for_status()
+            import json
+
+            return json.loads(await response.read())
+
+    async def entity_create(
+        self,
+        entity_type: str,
+        *,
+        fields: dict[str, Any],
+        auth: YandexAuth | None = None,
+    ) -> dict[str, Any]:
+        async with self._session.post(
+            f"v3/entities/{entity_type}",
+            headers=await self._build_headers(auth),
+            json={"fields": fields},
+        ) as response:
+            response.raise_for_status()
+            import json
+
+            return json.loads(await response.read())
+
+    async def entity_update(
+        self,
+        entity_type: str,
+        entity_id: str,
+        *,
+        fields: dict[str, Any],
+        auth: YandexAuth | None = None,
+    ) -> dict[str, Any]:
+        async with self._session.patch(
+            f"v3/entities/{entity_type}/{entity_id}",
+            headers=await self._build_headers(auth),
+            json={"fields": fields},
+        ) as response:
+            response.raise_for_status()
+            import json
+
+            return json.loads(await response.read())
+
+    async def entity_delete(
+        self,
+        entity_type: str,
+        entity_id: str,
+        *,
+        auth: YandexAuth | None = None,
+    ) -> None:
+        async with self._session.delete(
+            f"v3/entities/{entity_type}/{entity_id}",
+            headers=await self._build_headers(auth),
+        ) as response:
+            response.raise_for_status()
+
+    async def projects_search(
+        self,
+        *,
+        filter: dict[str, Any] | None = None,
+        order: list[str] | None = None,
+        per_page: int = 50,
+        page: int = 1,
+        auth: YandexAuth | None = None,
+    ) -> list[Project]:
+        raw = await self.entities_search(
+            "project",
+            filter=filter,
+            order=order,
+            per_page=per_page,
+            page=page,
+            auth=auth,
+        )
+        return [Project.model_validate(item) for item in raw]
+
+    async def portfolios_search(
+        self,
+        *,
+        filter: dict[str, Any] | None = None,
+        order: list[str] | None = None,
+        per_page: int = 50,
+        page: int = 1,
+        auth: YandexAuth | None = None,
+    ) -> list[Portfolio]:
+        raw = await self.entities_search(
+            "portfolio",
+            filter=filter,
+            order=order,
+            per_page=per_page,
+            page=page,
+            auth=auth,
+        )
+        return [Portfolio.model_validate(item) for item in raw]
+
+    async def goals_search(
+        self,
+        *,
+        filter: dict[str, Any] | None = None,
+        order: list[str] | None = None,
+        per_page: int = 50,
+        page: int = 1,
+        auth: YandexAuth | None = None,
+    ) -> list[Goal]:
+        raw = await self.entities_search(
+            "goal",
+            filter=filter,
+            order=order,
+            per_page=per_page,
+            page=page,
+            auth=auth,
+        )
+        return [Goal.model_validate(item) for item in raw]
+
+    async def projects_legacy_list(
+        self,
+        *,
+        per_page: int = 50,
+        page: int = 1,
+        auth: YandexAuth | None = None,
+    ) -> list[ProjectLegacy]:
+        params = {"perPage": per_page, "page": page}
+        async with self._session.get(
+            "v2/projects",
+            headers=await self._build_headers(auth),
+            params=params,
+        ) as response:
+            response.raise_for_status()
+            return ProjectLegacyList.model_validate_json(await response.read()).root
+
+    # --- dashboards ---
+    async def dashboards_list(
+        self,
+        *,
+        per_page: int = 50,
+        page: int = 1,
+        auth: YandexAuth | None = None,
+    ) -> list[Dashboard]:
+        params = {"perPage": per_page, "page": page}
+        async with self._session.get(
+            "v3/dashboards",
+            headers=await self._build_headers(auth),
+            params=params,
+        ) as response:
+            response.raise_for_status()
+            return DashboardList.model_validate_json(await response.read()).root
+
+    async def dashboard_get(
+        self, dashboard_id: str, *, auth: YandexAuth | None = None
+    ) -> Dashboard:
+        async with self._session.get(
+            f"v3/dashboards/{dashboard_id}",
+            headers=await self._build_headers(auth),
+        ) as response:
+            response.raise_for_status()
+            return Dashboard.model_validate_json(await response.read())
+
+    async def dashboard_get_widgets(
+        self, dashboard_id: str, *, auth: YandexAuth | None = None
+    ) -> list[DashboardWidget]:
+        async with self._session.get(
+            f"v3/dashboards/{dashboard_id}/widgets",
+            headers=await self._build_headers(auth),
+        ) as response:
+            response.raise_for_status()
+            return DashboardWidgetList.model_validate_json(await response.read()).root
+
+    async def dashboard_create(
+        self,
+        *,
+        name: str,
+        fields: dict[str, Any] | None = None,
+        auth: YandexAuth | None = None,
+    ) -> Dashboard:
+        body: dict[str, Any] = {"name": name}
+        if fields:
+            for k, v in fields.items():
+                body.setdefault(k, v)
+        async with self._session.post(
+            "v3/dashboards",
+            headers=await self._build_headers(auth),
+            json=body,
+        ) as response:
+            response.raise_for_status()
+            return Dashboard.model_validate_json(await response.read())
+
+    async def dashboard_update(
+        self,
+        dashboard_id: str,
+        *,
+        fields: dict[str, Any],
+        auth: YandexAuth | None = None,
+    ) -> Dashboard:
+        async with self._session.patch(
+            f"v3/dashboards/{dashboard_id}",
+            headers=await self._build_headers(auth),
+            json=fields,
+        ) as response:
+            response.raise_for_status()
+            return Dashboard.model_validate_json(await response.read())
+
+    async def dashboard_delete(
+        self, dashboard_id: str, *, auth: YandexAuth | None = None
+    ) -> None:
+        async with self._session.delete(
+            f"v3/dashboards/{dashboard_id}",
+            headers=await self._build_headers(auth),
+        ) as response:
+            response.raise_for_status()
+
+    # --- automations ---
+    async def triggers_list(
+        self, queue_id: str, *, auth: YandexAuth | None = None
+    ) -> list[Trigger]:
+        async with self._session.get(
+            f"v3/queues/{queue_id}/triggers",
+            headers=await self._build_headers(auth),
+        ) as response:
+            response.raise_for_status()
+            return TriggerList.model_validate_json(await response.read()).root
+
+    async def trigger_get(
+        self,
+        queue_id: str,
+        trigger_id: str | int,
+        *,
+        auth: YandexAuth | None = None,
+    ) -> Trigger:
+        async with self._session.get(
+            f"v3/queues/{queue_id}/triggers/{trigger_id}",
+            headers=await self._build_headers(auth),
+        ) as response:
+            response.raise_for_status()
+            return Trigger.model_validate_json(await response.read())
+
+    async def trigger_create(
+        self,
+        queue_id: str,
+        *,
+        name: str,
+        actions: list[dict[str, Any]],
+        conditions: list[dict[str, Any]] | None = None,
+        active: bool | None = None,
+        extra: dict[str, Any] | None = None,
+        auth: YandexAuth | None = None,
+    ) -> Trigger:
+        body: dict[str, Any] = {"name": name, "actions": actions}
+        if conditions is not None:
+            body["conditions"] = conditions
+        if active is not None:
+            body["active"] = active
+        if extra:
+            for k, v in extra.items():
+                body.setdefault(k, v)
+        async with self._session.post(
+            f"v3/queues/{queue_id}/triggers",
+            headers=await self._build_headers(auth),
+            json=body,
+        ) as response:
+            response.raise_for_status()
+            return Trigger.model_validate_json(await response.read())
+
+    async def trigger_update(
+        self,
+        queue_id: str,
+        trigger_id: str | int,
+        *,
+        fields: dict[str, Any],
+        auth: YandexAuth | None = None,
+    ) -> Trigger:
+        async with self._session.patch(
+            f"v3/queues/{queue_id}/triggers/{trigger_id}",
+            headers=await self._build_headers(auth),
+            json=fields,
+        ) as response:
+            response.raise_for_status()
+            return Trigger.model_validate_json(await response.read())
+
+    async def trigger_delete(
+        self,
+        queue_id: str,
+        trigger_id: str | int,
+        *,
+        auth: YandexAuth | None = None,
+    ) -> None:
+        async with self._session.delete(
+            f"v3/queues/{queue_id}/triggers/{trigger_id}",
+            headers=await self._build_headers(auth),
+        ) as response:
+            response.raise_for_status()
+
+    async def autoactions_list(
+        self, queue_id: str, *, auth: YandexAuth | None = None
+    ) -> list[Autoaction]:
+        async with self._session.get(
+            f"v3/queues/{queue_id}/autoactions",
+            headers=await self._build_headers(auth),
+        ) as response:
+            response.raise_for_status()
+            return AutoactionList.model_validate_json(await response.read()).root
+
+    async def autoaction_get(
+        self,
+        queue_id: str,
+        action_id: str | int,
+        *,
+        auth: YandexAuth | None = None,
+    ) -> Autoaction:
+        async with self._session.get(
+            f"v3/queues/{queue_id}/autoactions/{action_id}",
+            headers=await self._build_headers(auth),
+        ) as response:
+            response.raise_for_status()
+            return Autoaction.model_validate_json(await response.read())
+
+    async def autoaction_create(
+        self,
+        queue_id: str,
+        *,
+        name: str,
+        filter: dict[str, Any],
+        actions: list[dict[str, Any]],
+        cron_expression: str | None = None,
+        active: bool | None = None,
+        extra: dict[str, Any] | None = None,
+        auth: YandexAuth | None = None,
+    ) -> Autoaction:
+        body: dict[str, Any] = {
+            "name": name,
+            "filter": filter,
+            "actions": actions,
+        }
+        if cron_expression is not None:
+            body["cronExpression"] = cron_expression
+        if active is not None:
+            body["active"] = active
+        if extra:
+            for k, v in extra.items():
+                body.setdefault(k, v)
+        async with self._session.post(
+            f"v3/queues/{queue_id}/autoactions",
+            headers=await self._build_headers(auth),
+            json=body,
+        ) as response:
+            response.raise_for_status()
+            return Autoaction.model_validate_json(await response.read())
+
+    async def autoaction_update(
+        self,
+        queue_id: str,
+        action_id: str | int,
+        *,
+        fields: dict[str, Any],
+        auth: YandexAuth | None = None,
+    ) -> Autoaction:
+        async with self._session.patch(
+            f"v3/queues/{queue_id}/autoactions/{action_id}",
+            headers=await self._build_headers(auth),
+            json=fields,
+        ) as response:
+            response.raise_for_status()
+            return Autoaction.model_validate_json(await response.read())
+
+    async def autoaction_delete(
+        self,
+        queue_id: str,
+        action_id: str | int,
+        *,
+        auth: YandexAuth | None = None,
+    ) -> None:
+        async with self._session.delete(
+            f"v3/queues/{queue_id}/autoactions/{action_id}",
+            headers=await self._build_headers(auth),
+        ) as response:
+            response.raise_for_status()
+
+    async def macros_list(
+        self, queue_id: str, *, auth: YandexAuth | None = None
+    ) -> list[Macro]:
+        async with self._session.get(
+            f"v3/queues/{queue_id}/macros",
+            headers=await self._build_headers(auth),
+        ) as response:
+            response.raise_for_status()
+            return MacroList.model_validate_json(await response.read()).root
+
+    async def macro_get(
+        self,
+        queue_id: str,
+        macro_id: str | int,
+        *,
+        auth: YandexAuth | None = None,
+    ) -> Macro:
+        async with self._session.get(
+            f"v3/queues/{queue_id}/macros/{macro_id}",
+            headers=await self._build_headers(auth),
+        ) as response:
+            response.raise_for_status()
+            return Macro.model_validate_json(await response.read())
+
+    async def macro_create(
+        self,
+        queue_id: str,
+        *,
+        name: str,
+        body: str | None = None,
+        field_changes: list[dict[str, Any]] | None = None,
+        extra: dict[str, Any] | None = None,
+        auth: YandexAuth | None = None,
+    ) -> Macro:
+        payload: dict[str, Any] = {"name": name}
+        if body is not None:
+            payload["body"] = body
+        if field_changes is not None:
+            payload["fieldChanges"] = field_changes
+        if extra:
+            for k, v in extra.items():
+                payload.setdefault(k, v)
+        async with self._session.post(
+            f"v3/queues/{queue_id}/macros",
+            headers=await self._build_headers(auth),
+            json=payload,
+        ) as response:
+            response.raise_for_status()
+            return Macro.model_validate_json(await response.read())
+
+    async def macro_update(
+        self,
+        queue_id: str,
+        macro_id: str | int,
+        *,
+        fields: dict[str, Any],
+        auth: YandexAuth | None = None,
+    ) -> Macro:
+        async with self._session.patch(
+            f"v3/queues/{queue_id}/macros/{macro_id}",
+            headers=await self._build_headers(auth),
+            json=fields,
+        ) as response:
+            response.raise_for_status()
+            return Macro.model_validate_json(await response.read())
+
+    async def macro_delete(
+        self,
+        queue_id: str,
+        macro_id: str | int,
+        *,
+        auth: YandexAuth | None = None,
+    ) -> None:
+        async with self._session.delete(
+            f"v3/queues/{queue_id}/macros/{macro_id}",
+            headers=await self._build_headers(auth),
+        ) as response:
+            response.raise_for_status()
+
+    async def workflows_list(self, *, auth: YandexAuth | None = None) -> list[Workflow]:
+        async with self._session.get(
+            "v3/workflows", headers=await self._build_headers(auth)
+        ) as response:
+            response.raise_for_status()
+            return WorkflowList.model_validate_json(await response.read()).root
+
+    async def queue_workflow_get(
+        self, queue_id: str, *, auth: YandexAuth | None = None
+    ) -> Workflow:
+        async with self._session.get(
+            f"v3/queues/{queue_id}/workflow",
+            headers=await self._build_headers(auth),
+        ) as response:
+            response.raise_for_status()
+            return Workflow.model_validate_json(await response.read())
+
+    # --- bulk change ---
+    async def bulk_update(
+        self,
+        *,
+        issues: list[str],
+        values: dict[str, Any],
+        comment: str | None = None,
+        notify: bool | None = None,
+        auth: YandexAuth | None = None,
+    ) -> BulkChangeResult:
+        body: dict[str, Any] = {"issues": issues, "values": values}
+        if comment is not None:
+            body["comment"] = comment
+        if notify is not None:
+            body["notify"] = notify
+        async with self._session.post(
+            "v2/bulkchange/_update",
+            headers=await self._build_headers(auth),
+            json=body,
+        ) as response:
+            response.raise_for_status()
+            return BulkChangeResult.model_validate_json(await response.read())
+
+    async def bulk_move(
+        self,
+        *,
+        issues: list[str],
+        queue: str,
+        move_all_fields: bool | None = None,
+        initial_status: bool | None = None,
+        notify: bool | None = None,
+        extra: dict[str, Any] | None = None,
+        auth: YandexAuth | None = None,
+    ) -> BulkChangeResult:
+        body: dict[str, Any] = {"issues": issues, "queue": queue}
+        if move_all_fields is not None:
+            body["moveAllFields"] = move_all_fields
+        if initial_status is not None:
+            body["initialStatus"] = initial_status
+        if notify is not None:
+            body["notify"] = notify
+        if extra:
+            for k, v in extra.items():
+                body.setdefault(k, v)
+        async with self._session.post(
+            "v2/bulkchange/_move",
+            headers=await self._build_headers(auth),
+            json=body,
+        ) as response:
+            response.raise_for_status()
+            return BulkChangeResult.model_validate_json(await response.read())
+
+    async def bulk_transition(
+        self,
+        *,
+        issues: list[str],
+        transition: str,
+        comment: str | None = None,
+        resolution: str | None = None,
+        fields: dict[str, Any] | None = None,
+        auth: YandexAuth | None = None,
+    ) -> BulkChangeResult:
+        body: dict[str, Any] = {"issues": issues, "transition": transition}
+        if comment is not None:
+            body["comment"] = comment
+        if resolution is not None:
+            body["resolution"] = resolution
+        if fields is not None:
+            body["values"] = fields
+        async with self._session.post(
+            "v2/bulkchange/_transition",
+            headers=await self._build_headers(auth),
+            json=body,
+        ) as response:
+            response.raise_for_status()
+            return BulkChangeResult.model_validate_json(await response.read())
+
+    async def bulk_status_get(
+        self, operation_id: str, *, auth: YandexAuth | None = None
+    ) -> BulkChangeResult:
+        async with self._session.get(
+            f"v2/bulkchange/{operation_id}",
+            headers=await self._build_headers(auth),
+        ) as response:
+            response.raise_for_status()
+            return BulkChangeResult.model_validate_json(await response.read())

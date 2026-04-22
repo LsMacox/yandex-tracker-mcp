@@ -63,8 +63,11 @@ class IssueProtocol(Protocol):
     ) -> list[IssueLink]: ...
     async def issues_find(
         self,
-        query: str,
+        query: str | None = None,
         *,
+        filter: dict[str, Any] | None = None,
+        order: list[str] | None = None,
+        keys: list[str] | None = None,
         per_page: int = 15,
         page: int = 1,
         auth: YandexAuth | None = None,
@@ -163,6 +166,121 @@ class IssueProtocol(Protocol):
         version: int | None = None,
         auth: YandexAuth | None = None,
         **kwargs: Any,
+    ) -> Issue: ...
+
+    # --- links write ---
+    async def issue_add_link(
+        self,
+        issue_id: str,
+        *,
+        relationship: str,
+        target_issue: str,
+        auth: YandexAuth | None = None,
+    ) -> IssueLink: ...
+
+    async def issue_delete_link(
+        self,
+        issue_id: str,
+        link_id: int,
+        *,
+        auth: YandexAuth | None = None,
+    ) -> None: ...
+
+    # --- checklist write ---
+    async def issue_add_checklist_item(
+        self,
+        issue_id: str,
+        *,
+        text: str,
+        checked: bool | None = None,
+        assignee: str | int | None = None,
+        deadline: dict[str, Any] | None = None,
+        auth: YandexAuth | None = None,
+    ) -> list[ChecklistItem]: ...
+
+    async def issue_update_checklist_item(
+        self,
+        issue_id: str,
+        item_id: str,
+        *,
+        text: str | None = None,
+        checked: bool | None = None,
+        assignee: str | int | None = None,
+        deadline: dict[str, Any] | None = None,
+        auth: YandexAuth | None = None,
+    ) -> list[ChecklistItem]: ...
+
+    async def issue_delete_checklist_item(
+        self,
+        issue_id: str,
+        item_id: str,
+        *,
+        auth: YandexAuth | None = None,
+    ) -> list[ChecklistItem] | None: ...
+
+    async def issue_clear_checklist(
+        self,
+        issue_id: str,
+        *,
+        auth: YandexAuth | None = None,
+    ) -> None: ...
+
+    # --- attachments CRUD ---
+    async def issue_upload_attachment(
+        self,
+        issue_id: str,
+        *,
+        file_path: str,
+        filename: str | None = None,
+        auth: YandexAuth | None = None,
+    ) -> IssueAttachment: ...
+
+    async def issue_delete_attachment(
+        self,
+        issue_id: str,
+        attachment_id: str,
+        *,
+        auth: YandexAuth | None = None,
+    ) -> None: ...
+
+    async def issue_download_attachment(
+        self,
+        issue_id: str,
+        attachment_id: str,
+        filename: str,
+        *,
+        dest_path: str,
+        auth: YandexAuth | None = None,
+    ) -> str: ...
+
+    # --- misc issue ops ---
+    async def issue_add_tags(
+        self,
+        issue_id: str,
+        tags: list[str],
+        *,
+        auth: YandexAuth | None = None,
+    ) -> Issue: ...
+
+    async def issue_remove_tags(
+        self,
+        issue_id: str,
+        tags: list[str],
+        *,
+        auth: YandexAuth | None = None,
+    ) -> Issue: ...
+
+    async def issue_move_to_queue(
+        self,
+        issue_id: str,
+        queue: str,
+        *,
+        move_all_fields: bool | None = None,
+        initial_status: bool | None = None,
+        expand: list[str] | None = None,
+        notify: bool | None = None,
+        extra: dict[str, Any] | None = None,
+        auth: YandexAuth | None = None,
     ) -> Issue: ...
 
 

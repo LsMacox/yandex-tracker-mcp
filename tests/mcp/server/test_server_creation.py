@@ -1,7 +1,7 @@
 import pytest
 from mcp.client.session import ClientSession
 
-# Read-only tool names (24 tools) - always registered
+# Read-only tool names — always registered
 READ_ONLY_TOOL_NAMES = [
     # Queue tools (5)
     "queues_get_all",
@@ -31,10 +31,42 @@ READ_ONLY_TOOL_NAMES = [
     "users_search",
     "user_get",
     "user_get_current",
+    # Board tools (5)
+    "boards_get_all",
+    "board_get",
+    "board_get_columns",
+    "board_get_sprints",
+    "sprint_get",
+    # Filter tools (2)
+    "filters_list",
+    "filter_get",
+    # Component tools (2)
+    "components_list",
+    "component_get",
+    # Project/entities tools (5)
+    "projects_search",
+    "portfolios_search",
+    "goals_search",
+    "entity_get",
+    "projects_legacy_list",
+    # Dashboard tools (3)
+    "dashboards_list",
+    "dashboard_get",
+    "dashboard_get_widgets",
+    # Automation read tools (8)
+    "triggers_list",
+    "trigger_get",
+    "autoactions_list",
+    "autoaction_get",
+    "macros_list",
+    "macro_get",
+    "workflows_list",
+    "queue_workflow_get",
 ]
 
-# Write tool names - only registered when not in read-only mode
+# Write tool names — only registered when not in read-only mode
 WRITE_TOOL_NAMES = [
+    # Existing issue write (10)
     "issue_execute_transition",
     "issue_close",
     "issue_create",
@@ -45,6 +77,58 @@ WRITE_TOOL_NAMES = [
     "issue_add_comment",
     "issue_update_comment",
     "issue_delete_comment",
+    # Issue extras (11)
+    "issue_add_link",
+    "issue_delete_link",
+    "issue_add_checklist_item",
+    "issue_update_checklist_item",
+    "issue_delete_checklist_item",
+    "issue_clear_checklist",
+    "issue_upload_attachment",
+    "issue_delete_attachment",
+    "issue_download_attachment",
+    "issue_add_tags",
+    "issue_remove_tags",
+    "issue_move_to_queue",
+    # Board write (7)
+    "board_create",
+    "board_update",
+    "board_delete",
+    "board_column_create",
+    "board_column_update",
+    "board_column_delete",
+    "sprint_create",
+    # Filter write (3)
+    "filter_create",
+    "filter_update",
+    "filter_delete",
+    # Component write (3)
+    "component_create",
+    "component_update",
+    "component_delete",
+    # Entity write (3)
+    "entity_create",
+    "entity_update",
+    "entity_delete",
+    # Dashboard write (3)
+    "dashboard_create",
+    "dashboard_update",
+    "dashboard_delete",
+    # Automation write (9)
+    "trigger_create",
+    "trigger_update",
+    "trigger_delete",
+    "autoaction_create",
+    "autoaction_update",
+    "autoaction_delete",
+    "macro_create",
+    "macro_update",
+    "macro_delete",
+    # Bulk change (4)
+    "bulk_update",
+    "bulk_move",
+    "bulk_transition",
+    "bulk_status_get",
 ]
 
 # All tool names that should be registered in normal mode

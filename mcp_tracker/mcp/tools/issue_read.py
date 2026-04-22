@@ -95,12 +95,36 @@ def register_issue_read_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
 
     @mcp.tool(
         title="Find Issues",
-        description="Find Yandex Tracker issues by queue and/or created date",
+        description="Find Yandex Tracker issues. Provide either YQL `query` or a structured "
+        '`filter` dict (e.g. {"queue": "TEST", "assignee": "me()"}). '
+        "Sorting is done via `order` (list of field keys, prefix with '-' for DESC, e.g. ['-created']). "
+        "To restrict fetch to specific issue keys use `keys`.",
         annotations=ToolAnnotations(readOnlyHint=True),
     )
     async def issues_find(
         ctx: Context[Any, AppContext],
-        query: YTQuery,
+        query: Annotated[
+            str | None,
+            Field(
+                description="YQL query (see issues query docs). Mutually usable with filter."
+            ),
+        ] = None,
+        filter: Annotated[
+            dict[str, Any] | None,
+            Field(
+                description="Structured filter object; keys are field ids, values are scalars or lists."
+            ),
+        ] = None,
+        order: Annotated[
+            list[str] | None,
+            Field(
+                description="Sort by field keys; prefix with '+' / '-' for asc/desc, default ascending."
+            ),
+        ] = None,
+        keys: Annotated[
+            list[str] | None,
+            Field(description="Restrict search to the given issue keys/ids."),
+        ] = None,
         include_description: Annotated[
             bool,
             Field(
@@ -117,8 +141,17 @@ def register_issue_read_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
         page: PageParam = 1,
         per_page: PerPageParam = 100,
     ) -> list[Issue]:
+        if query is None and filter is None and not keys:
+            raise ValueError(
+                "Provide at least one of: query, filter, or keys — "
+                "cannot search without any criteria."
+            )
+
         issues = await ctx.request_context.lifespan_context.issues.issues_find(
             query=query,
+            filter=filter,
+            order=order,
+            keys=keys,
             per_page=per_page,
             page=page,
             auth=get_yandex_auth(ctx),

@@ -4,10 +4,20 @@ from typing import Any
 
 from aiocache import cached
 
+from mcp_tracker.tracker.proto.boards import BoardsProtocolWrap
 from mcp_tracker.tracker.proto.common import YandexAuth
+from mcp_tracker.tracker.proto.extras import (
+    AutomationsProtocolWrap,
+    BulkChangeProtocolWrap,
+    ComponentsProtocolWrap,
+    DashboardsProtocolWrap,
+    EntitiesProtocolWrap,
+    FiltersProtocolWrap,
+)
 from mcp_tracker.tracker.proto.fields import GlobalDataProtocolWrap
 from mcp_tracker.tracker.proto.issues import IssueProtocolWrap
 from mcp_tracker.tracker.proto.queues import QueuesProtocolWrap
+from mcp_tracker.tracker.proto.types.boards import Board, BoardColumn, Sprint
 from mcp_tracker.tracker.proto.types.fields import GlobalField, LocalField
 from mcp_tracker.tracker.proto.types.inputs import (
     IssueUpdateFollower,
@@ -27,6 +37,21 @@ from mcp_tracker.tracker.proto.types.issues import (
     IssueTransition,
     Worklog,
 )
+from mcp_tracker.tracker.proto.types.misc import (
+    Autoaction,
+    BulkChangeResult,
+    Component,
+    Dashboard,
+    DashboardWidget,
+    Goal,
+    IssueFilter,
+    Macro,
+    Portfolio,
+    Project,
+    ProjectLegacy,
+    Trigger,
+    Workflow,
+)
 from mcp_tracker.tracker.proto.types.priorities import Priority
 from mcp_tracker.tracker.proto.types.queues import (
     Queue,
@@ -45,6 +70,13 @@ class CacheCollection:
     issues: type[IssueProtocolWrap]
     global_data: type[GlobalDataProtocolWrap]
     users: type[UsersProtocolWrap]
+    boards: type[BoardsProtocolWrap]
+    filters: type[FiltersProtocolWrap]
+    components: type[ComponentsProtocolWrap]
+    entities: type[EntitiesProtocolWrap]
+    dashboards: type[DashboardsProtocolWrap]
+    automations: type[AutomationsProtocolWrap]
+    bulkchange: type[BulkChangeProtocolWrap]
 
 
 def make_cached_protocols(
@@ -168,14 +200,20 @@ def make_cached_protocols(
         @cached(**cache_config)
         async def issues_find(
             self,
-            query: str,
+            query: str | None = None,
             *,
+            filter: dict[str, Any] | None = None,
+            order: list[str] | None = None,
+            keys: list[str] | None = None,
             per_page: int = 15,
             page: int = 1,
             auth: YandexAuth | None = None,
         ) -> list[Issue]:
             return await self._original.issues_find(
                 query=query,
+                filter=filter,
+                order=order,
+                keys=keys,
                 per_page=per_page,
                 page=page,
                 auth=auth,
@@ -360,6 +398,173 @@ def make_cached_protocols(
                 **kwargs,
             )
 
+        async def issue_add_link(
+            self,
+            issue_id: str,
+            *,
+            relationship: str,
+            target_issue: str,
+            auth: YandexAuth | None = None,
+        ) -> IssueLink:
+            return await self._original.issue_add_link(
+                issue_id,
+                relationship=relationship,
+                target_issue=target_issue,
+                auth=auth,
+            )
+
+        async def issue_delete_link(
+            self,
+            issue_id: str,
+            link_id: int,
+            *,
+            auth: YandexAuth | None = None,
+        ) -> None:
+            return await self._original.issue_delete_link(issue_id, link_id, auth=auth)
+
+        async def issue_add_checklist_item(
+            self,
+            issue_id: str,
+            *,
+            text: str,
+            checked: bool | None = None,
+            assignee: str | int | None = None,
+            deadline: dict[str, Any] | None = None,
+            auth: YandexAuth | None = None,
+        ) -> list[ChecklistItem]:
+            return await self._original.issue_add_checklist_item(
+                issue_id,
+                text=text,
+                checked=checked,
+                assignee=assignee,
+                deadline=deadline,
+                auth=auth,
+            )
+
+        async def issue_update_checklist_item(
+            self,
+            issue_id: str,
+            item_id: str,
+            *,
+            text: str | None = None,
+            checked: bool | None = None,
+            assignee: str | int | None = None,
+            deadline: dict[str, Any] | None = None,
+            auth: YandexAuth | None = None,
+        ) -> list[ChecklistItem]:
+            return await self._original.issue_update_checklist_item(
+                issue_id,
+                item_id,
+                text=text,
+                checked=checked,
+                assignee=assignee,
+                deadline=deadline,
+                auth=auth,
+            )
+
+        async def issue_delete_checklist_item(
+            self,
+            issue_id: str,
+            item_id: str,
+            *,
+            auth: YandexAuth | None = None,
+        ) -> list[ChecklistItem] | None:
+            return await self._original.issue_delete_checklist_item(
+                issue_id, item_id, auth=auth
+            )
+
+        async def issue_clear_checklist(
+            self,
+            issue_id: str,
+            *,
+            auth: YandexAuth | None = None,
+        ) -> None:
+            return await self._original.issue_clear_checklist(issue_id, auth=auth)
+
+        async def issue_upload_attachment(
+            self,
+            issue_id: str,
+            *,
+            file_path: str,
+            filename: str | None = None,
+            auth: YandexAuth | None = None,
+        ) -> IssueAttachment:
+            return await self._original.issue_upload_attachment(
+                issue_id,
+                file_path=file_path,
+                filename=filename,
+                auth=auth,
+            )
+
+        async def issue_delete_attachment(
+            self,
+            issue_id: str,
+            attachment_id: str,
+            *,
+            auth: YandexAuth | None = None,
+        ) -> None:
+            return await self._original.issue_delete_attachment(
+                issue_id, attachment_id, auth=auth
+            )
+
+        async def issue_download_attachment(
+            self,
+            issue_id: str,
+            attachment_id: str,
+            filename: str,
+            *,
+            dest_path: str,
+            auth: YandexAuth | None = None,
+        ) -> str:
+            return await self._original.issue_download_attachment(
+                issue_id,
+                attachment_id,
+                filename,
+                dest_path=dest_path,
+                auth=auth,
+            )
+
+        async def issue_add_tags(
+            self,
+            issue_id: str,
+            tags: list[str],
+            *,
+            auth: YandexAuth | None = None,
+        ) -> Issue:
+            return await self._original.issue_add_tags(issue_id, tags, auth=auth)
+
+        async def issue_remove_tags(
+            self,
+            issue_id: str,
+            tags: list[str],
+            *,
+            auth: YandexAuth | None = None,
+        ) -> Issue:
+            return await self._original.issue_remove_tags(issue_id, tags, auth=auth)
+
+        async def issue_move_to_queue(
+            self,
+            issue_id: str,
+            queue: str,
+            *,
+            move_all_fields: bool | None = None,
+            initial_status: bool | None = None,
+            expand: list[str] | None = None,
+            notify: bool | None = None,
+            extra: dict[str, Any] | None = None,
+            auth: YandexAuth | None = None,
+        ) -> Issue:
+            return await self._original.issue_move_to_queue(
+                issue_id,
+                queue,
+                move_all_fields=move_all_fields,
+                initial_status=initial_status,
+                expand=expand,
+                notify=notify,
+                extra=extra,
+                auth=auth,
+            )
+
     class CachingGlobalDataProtocol(GlobalDataProtocolWrap):
         @cached(**cache_config)
         async def get_global_fields(
@@ -408,9 +613,702 @@ def make_cached_protocols(
         async def user_get_current(self, *, auth: YandexAuth | None = None) -> User:
             return await self._original.user_get_current(auth=auth)
 
+    class CachingBoardsProtocol(BoardsProtocolWrap):
+        @cached(**cache_config)
+        async def boards_list(self, *, auth: YandexAuth | None = None) -> list[Board]:
+            return await self._original.boards_list(auth=auth)
+
+        @cached(**cache_config)
+        async def board_get(
+            self, board_id: int, *, auth: YandexAuth | None = None
+        ) -> Board:
+            return await self._original.board_get(board_id, auth=auth)
+
+        @cached(**cache_config)
+        async def board_get_columns(
+            self, board_id: int, *, auth: YandexAuth | None = None
+        ) -> list[BoardColumn]:
+            return await self._original.board_get_columns(board_id, auth=auth)
+
+        @cached(**cache_config)
+        async def board_get_sprints(
+            self, board_id: int, *, auth: YandexAuth | None = None
+        ) -> list[Sprint]:
+            return await self._original.board_get_sprints(board_id, auth=auth)
+
+        @cached(**cache_config)
+        async def sprint_get(
+            self, sprint_id: str, *, auth: YandexAuth | None = None
+        ) -> Sprint:
+            return await self._original.sprint_get(sprint_id, auth=auth)
+
+        async def board_create(
+            self,
+            *,
+            name: str,
+            filter: dict[str, Any] | None = None,
+            non_parametrized_columns: list[dict[str, Any]] | None = None,
+            columns: list[dict[str, Any]] | None = None,
+            query: str | None = None,
+            order_by: str | None = None,
+            order_asc: bool | None = None,
+            use_ranking: bool | None = None,
+            estimate_by: str | None = None,
+            flow: str | None = None,
+            extra: dict[str, Any] | None = None,
+            auth: YandexAuth | None = None,
+        ) -> Board:
+            return await self._original.board_create(
+                name=name,
+                filter=filter,
+                non_parametrized_columns=non_parametrized_columns,
+                columns=columns,
+                query=query,
+                order_by=order_by,
+                order_asc=order_asc,
+                use_ranking=use_ranking,
+                estimate_by=estimate_by,
+                flow=flow,
+                extra=extra,
+                auth=auth,
+            )
+
+        async def board_update(
+            self,
+            board_id: int,
+            *,
+            fields: dict[str, Any],
+            auth: YandexAuth | None = None,
+        ) -> Board:
+            return await self._original.board_update(board_id, fields=fields, auth=auth)
+
+        async def board_delete(
+            self, board_id: int, *, auth: YandexAuth | None = None
+        ) -> None:
+            return await self._original.board_delete(board_id, auth=auth)
+
+        async def board_column_create(
+            self,
+            board_id: int,
+            *,
+            name: str,
+            statuses: list[str],
+            version: str | int | None = None,
+            auth: YandexAuth | None = None,
+        ) -> BoardColumn:
+            return await self._original.board_column_create(
+                board_id,
+                name=name,
+                statuses=statuses,
+                version=version,
+                auth=auth,
+            )
+
+        async def board_column_update(
+            self,
+            board_id: int,
+            column_id: int,
+            *,
+            name: str | None = None,
+            statuses: list[str] | None = None,
+            version: str | int | None = None,
+            auth: YandexAuth | None = None,
+        ) -> BoardColumn:
+            return await self._original.board_column_update(
+                board_id,
+                column_id,
+                name=name,
+                statuses=statuses,
+                version=version,
+                auth=auth,
+            )
+
+        async def board_column_delete(
+            self,
+            board_id: int,
+            column_id: int,
+            *,
+            version: str | int | None = None,
+            auth: YandexAuth | None = None,
+        ) -> None:
+            return await self._original.board_column_delete(
+                board_id, column_id, version=version, auth=auth
+            )
+
+        async def sprint_create(
+            self,
+            board_id: int,
+            *,
+            name: str,
+            start_date: str | None = None,
+            end_date: str | None = None,
+            start_date_time: str | None = None,
+            end_date_time: str | None = None,
+            extra: dict[str, Any] | None = None,
+            auth: YandexAuth | None = None,
+        ) -> Sprint:
+            return await self._original.sprint_create(
+                board_id,
+                name=name,
+                start_date=start_date,
+                end_date=end_date,
+                start_date_time=start_date_time,
+                end_date_time=end_date_time,
+                extra=extra,
+                auth=auth,
+            )
+
+    class CachingFiltersProtocol(FiltersProtocolWrap):
+        @cached(**cache_config)
+        async def filters_list(
+            self, *, auth: YandexAuth | None = None
+        ) -> list[IssueFilter]:
+            return await self._original.filters_list(auth=auth)
+
+        @cached(**cache_config)
+        async def filter_get(
+            self, filter_id: str, *, auth: YandexAuth | None = None
+        ) -> IssueFilter:
+            return await self._original.filter_get(filter_id, auth=auth)
+
+        async def filter_create(
+            self,
+            *,
+            name: str,
+            query: str,
+            owner: str | dict[str, Any] | None = None,
+            extra: dict[str, Any] | None = None,
+            auth: YandexAuth | None = None,
+        ) -> IssueFilter:
+            return await self._original.filter_create(
+                name=name, query=query, owner=owner, extra=extra, auth=auth
+            )
+
+        async def filter_update(
+            self,
+            filter_id: str,
+            *,
+            fields: dict[str, Any],
+            auth: YandexAuth | None = None,
+        ) -> IssueFilter:
+            return await self._original.filter_update(
+                filter_id, fields=fields, auth=auth
+            )
+
+        async def filter_delete(
+            self, filter_id: str, *, auth: YandexAuth | None = None
+        ) -> None:
+            return await self._original.filter_delete(filter_id, auth=auth)
+
+    class CachingComponentsProtocol(ComponentsProtocolWrap):
+        @cached(**cache_config)
+        async def components_list(
+            self,
+            *,
+            per_page: int = 50,
+            page: int = 1,
+            auth: YandexAuth | None = None,
+        ) -> list[Component]:
+            return await self._original.components_list(
+                per_page=per_page, page=page, auth=auth
+            )
+
+        @cached(**cache_config)
+        async def component_get(
+            self, component_id: str | int, *, auth: YandexAuth | None = None
+        ) -> Component:
+            return await self._original.component_get(component_id, auth=auth)
+
+        async def component_create(
+            self,
+            *,
+            name: str,
+            queue: str,
+            description: str | None = None,
+            lead: str | None = None,
+            assign_auto: bool | None = None,
+            extra: dict[str, Any] | None = None,
+            auth: YandexAuth | None = None,
+        ) -> Component:
+            return await self._original.component_create(
+                name=name,
+                queue=queue,
+                description=description,
+                lead=lead,
+                assign_auto=assign_auto,
+                extra=extra,
+                auth=auth,
+            )
+
+        async def component_update(
+            self,
+            component_id: str | int,
+            *,
+            fields: dict[str, Any],
+            auth: YandexAuth | None = None,
+        ) -> Component:
+            return await self._original.component_update(
+                component_id, fields=fields, auth=auth
+            )
+
+        async def component_delete(
+            self, component_id: str | int, *, auth: YandexAuth | None = None
+        ) -> None:
+            return await self._original.component_delete(component_id, auth=auth)
+
+    class CachingEntitiesProtocol(EntitiesProtocolWrap):
+        @cached(**cache_config)
+        async def entities_search(
+            self,
+            entity_type: str,
+            *,
+            filter: dict[str, Any] | None = None,
+            order: list[str] | None = None,
+            per_page: int = 50,
+            page: int = 1,
+            fields: list[str] | None = None,
+            root_only: bool | None = None,
+            expand: list[str] | None = None,
+            auth: YandexAuth | None = None,
+        ) -> list[dict[str, Any]]:
+            return await self._original.entities_search(
+                entity_type,
+                filter=filter,
+                order=order,
+                per_page=per_page,
+                page=page,
+                fields=fields,
+                root_only=root_only,
+                expand=expand,
+                auth=auth,
+            )
+
+        @cached(**cache_config)
+        async def entity_get(
+            self,
+            entity_type: str,
+            entity_id: str,
+            *,
+            fields: list[str] | None = None,
+            expand: list[str] | None = None,
+            auth: YandexAuth | None = None,
+        ) -> dict[str, Any]:
+            return await self._original.entity_get(
+                entity_type, entity_id, fields=fields, expand=expand, auth=auth
+            )
+
+        async def entity_create(
+            self,
+            entity_type: str,
+            *,
+            fields: dict[str, Any],
+            auth: YandexAuth | None = None,
+        ) -> dict[str, Any]:
+            return await self._original.entity_create(
+                entity_type, fields=fields, auth=auth
+            )
+
+        async def entity_update(
+            self,
+            entity_type: str,
+            entity_id: str,
+            *,
+            fields: dict[str, Any],
+            auth: YandexAuth | None = None,
+        ) -> dict[str, Any]:
+            return await self._original.entity_update(
+                entity_type, entity_id, fields=fields, auth=auth
+            )
+
+        async def entity_delete(
+            self,
+            entity_type: str,
+            entity_id: str,
+            *,
+            auth: YandexAuth | None = None,
+        ) -> None:
+            return await self._original.entity_delete(entity_type, entity_id, auth=auth)
+
+        @cached(**cache_config)
+        async def projects_search(
+            self,
+            *,
+            filter: dict[str, Any] | None = None,
+            order: list[str] | None = None,
+            per_page: int = 50,
+            page: int = 1,
+            auth: YandexAuth | None = None,
+        ) -> list[Project]:
+            return await self._original.projects_search(
+                filter=filter,
+                order=order,
+                per_page=per_page,
+                page=page,
+                auth=auth,
+            )
+
+        @cached(**cache_config)
+        async def portfolios_search(
+            self,
+            *,
+            filter: dict[str, Any] | None = None,
+            order: list[str] | None = None,
+            per_page: int = 50,
+            page: int = 1,
+            auth: YandexAuth | None = None,
+        ) -> list[Portfolio]:
+            return await self._original.portfolios_search(
+                filter=filter,
+                order=order,
+                per_page=per_page,
+                page=page,
+                auth=auth,
+            )
+
+        @cached(**cache_config)
+        async def goals_search(
+            self,
+            *,
+            filter: dict[str, Any] | None = None,
+            order: list[str] | None = None,
+            per_page: int = 50,
+            page: int = 1,
+            auth: YandexAuth | None = None,
+        ) -> list[Goal]:
+            return await self._original.goals_search(
+                filter=filter,
+                order=order,
+                per_page=per_page,
+                page=page,
+                auth=auth,
+            )
+
+        @cached(**cache_config)
+        async def projects_legacy_list(
+            self,
+            *,
+            per_page: int = 50,
+            page: int = 1,
+            auth: YandexAuth | None = None,
+        ) -> list[ProjectLegacy]:
+            return await self._original.projects_legacy_list(
+                per_page=per_page, page=page, auth=auth
+            )
+
+    class CachingDashboardsProtocol(DashboardsProtocolWrap):
+        @cached(**cache_config)
+        async def dashboards_list(
+            self,
+            *,
+            per_page: int = 50,
+            page: int = 1,
+            auth: YandexAuth | None = None,
+        ) -> list[Dashboard]:
+            return await self._original.dashboards_list(
+                per_page=per_page, page=page, auth=auth
+            )
+
+        @cached(**cache_config)
+        async def dashboard_get(
+            self, dashboard_id: str, *, auth: YandexAuth | None = None
+        ) -> Dashboard:
+            return await self._original.dashboard_get(dashboard_id, auth=auth)
+
+        @cached(**cache_config)
+        async def dashboard_get_widgets(
+            self, dashboard_id: str, *, auth: YandexAuth | None = None
+        ) -> list[DashboardWidget]:
+            return await self._original.dashboard_get_widgets(dashboard_id, auth=auth)
+
+        async def dashboard_create(
+            self,
+            *,
+            name: str,
+            fields: dict[str, Any] | None = None,
+            auth: YandexAuth | None = None,
+        ) -> Dashboard:
+            return await self._original.dashboard_create(
+                name=name, fields=fields, auth=auth
+            )
+
+        async def dashboard_update(
+            self,
+            dashboard_id: str,
+            *,
+            fields: dict[str, Any],
+            auth: YandexAuth | None = None,
+        ) -> Dashboard:
+            return await self._original.dashboard_update(
+                dashboard_id, fields=fields, auth=auth
+            )
+
+        async def dashboard_delete(
+            self, dashboard_id: str, *, auth: YandexAuth | None = None
+        ) -> None:
+            return await self._original.dashboard_delete(dashboard_id, auth=auth)
+
+    class CachingAutomationsProtocol(AutomationsProtocolWrap):
+        @cached(**cache_config)
+        async def triggers_list(
+            self, queue_id: str, *, auth: YandexAuth | None = None
+        ) -> list[Trigger]:
+            return await self._original.triggers_list(queue_id, auth=auth)
+
+        @cached(**cache_config)
+        async def trigger_get(
+            self,
+            queue_id: str,
+            trigger_id: str | int,
+            *,
+            auth: YandexAuth | None = None,
+        ) -> Trigger:
+            return await self._original.trigger_get(queue_id, trigger_id, auth=auth)
+
+        async def trigger_create(
+            self,
+            queue_id: str,
+            *,
+            name: str,
+            actions: list[dict[str, Any]],
+            conditions: list[dict[str, Any]] | None = None,
+            active: bool | None = None,
+            extra: dict[str, Any] | None = None,
+            auth: YandexAuth | None = None,
+        ) -> Trigger:
+            return await self._original.trigger_create(
+                queue_id,
+                name=name,
+                actions=actions,
+                conditions=conditions,
+                active=active,
+                extra=extra,
+                auth=auth,
+            )
+
+        async def trigger_update(
+            self,
+            queue_id: str,
+            trigger_id: str | int,
+            *,
+            fields: dict[str, Any],
+            auth: YandexAuth | None = None,
+        ) -> Trigger:
+            return await self._original.trigger_update(
+                queue_id, trigger_id, fields=fields, auth=auth
+            )
+
+        async def trigger_delete(
+            self,
+            queue_id: str,
+            trigger_id: str | int,
+            *,
+            auth: YandexAuth | None = None,
+        ) -> None:
+            return await self._original.trigger_delete(queue_id, trigger_id, auth=auth)
+
+        @cached(**cache_config)
+        async def autoactions_list(
+            self, queue_id: str, *, auth: YandexAuth | None = None
+        ) -> list[Autoaction]:
+            return await self._original.autoactions_list(queue_id, auth=auth)
+
+        @cached(**cache_config)
+        async def autoaction_get(
+            self,
+            queue_id: str,
+            action_id: str | int,
+            *,
+            auth: YandexAuth | None = None,
+        ) -> Autoaction:
+            return await self._original.autoaction_get(queue_id, action_id, auth=auth)
+
+        async def autoaction_create(
+            self,
+            queue_id: str,
+            *,
+            name: str,
+            filter: dict[str, Any],
+            actions: list[dict[str, Any]],
+            cron_expression: str | None = None,
+            active: bool | None = None,
+            extra: dict[str, Any] | None = None,
+            auth: YandexAuth | None = None,
+        ) -> Autoaction:
+            return await self._original.autoaction_create(
+                queue_id,
+                name=name,
+                filter=filter,
+                actions=actions,
+                cron_expression=cron_expression,
+                active=active,
+                extra=extra,
+                auth=auth,
+            )
+
+        async def autoaction_update(
+            self,
+            queue_id: str,
+            action_id: str | int,
+            *,
+            fields: dict[str, Any],
+            auth: YandexAuth | None = None,
+        ) -> Autoaction:
+            return await self._original.autoaction_update(
+                queue_id, action_id, fields=fields, auth=auth
+            )
+
+        async def autoaction_delete(
+            self,
+            queue_id: str,
+            action_id: str | int,
+            *,
+            auth: YandexAuth | None = None,
+        ) -> None:
+            return await self._original.autoaction_delete(
+                queue_id, action_id, auth=auth
+            )
+
+        @cached(**cache_config)
+        async def macros_list(
+            self, queue_id: str, *, auth: YandexAuth | None = None
+        ) -> list[Macro]:
+            return await self._original.macros_list(queue_id, auth=auth)
+
+        @cached(**cache_config)
+        async def macro_get(
+            self,
+            queue_id: str,
+            macro_id: str | int,
+            *,
+            auth: YandexAuth | None = None,
+        ) -> Macro:
+            return await self._original.macro_get(queue_id, macro_id, auth=auth)
+
+        async def macro_create(
+            self,
+            queue_id: str,
+            *,
+            name: str,
+            body: str | None = None,
+            field_changes: list[dict[str, Any]] | None = None,
+            extra: dict[str, Any] | None = None,
+            auth: YandexAuth | None = None,
+        ) -> Macro:
+            return await self._original.macro_create(
+                queue_id,
+                name=name,
+                body=body,
+                field_changes=field_changes,
+                extra=extra,
+                auth=auth,
+            )
+
+        async def macro_update(
+            self,
+            queue_id: str,
+            macro_id: str | int,
+            *,
+            fields: dict[str, Any],
+            auth: YandexAuth | None = None,
+        ) -> Macro:
+            return await self._original.macro_update(
+                queue_id, macro_id, fields=fields, auth=auth
+            )
+
+        async def macro_delete(
+            self,
+            queue_id: str,
+            macro_id: str | int,
+            *,
+            auth: YandexAuth | None = None,
+        ) -> None:
+            return await self._original.macro_delete(queue_id, macro_id, auth=auth)
+
+        @cached(**cache_config)
+        async def workflows_list(
+            self, *, auth: YandexAuth | None = None
+        ) -> list[Workflow]:
+            return await self._original.workflows_list(auth=auth)
+
+        @cached(**cache_config)
+        async def queue_workflow_get(
+            self, queue_id: str, *, auth: YandexAuth | None = None
+        ) -> Workflow:
+            return await self._original.queue_workflow_get(queue_id, auth=auth)
+
+    class CachingBulkChangeProtocol(BulkChangeProtocolWrap):
+        async def bulk_update(
+            self,
+            *,
+            issues: list[str],
+            values: dict[str, Any],
+            comment: str | None = None,
+            notify: bool | None = None,
+            auth: YandexAuth | None = None,
+        ) -> BulkChangeResult:
+            return await self._original.bulk_update(
+                issues=issues,
+                values=values,
+                comment=comment,
+                notify=notify,
+                auth=auth,
+            )
+
+        async def bulk_move(
+            self,
+            *,
+            issues: list[str],
+            queue: str,
+            move_all_fields: bool | None = None,
+            initial_status: bool | None = None,
+            notify: bool | None = None,
+            extra: dict[str, Any] | None = None,
+            auth: YandexAuth | None = None,
+        ) -> BulkChangeResult:
+            return await self._original.bulk_move(
+                issues=issues,
+                queue=queue,
+                move_all_fields=move_all_fields,
+                initial_status=initial_status,
+                notify=notify,
+                extra=extra,
+                auth=auth,
+            )
+
+        async def bulk_transition(
+            self,
+            *,
+            issues: list[str],
+            transition: str,
+            comment: str | None = None,
+            resolution: str | None = None,
+            fields: dict[str, Any] | None = None,
+            auth: YandexAuth | None = None,
+        ) -> BulkChangeResult:
+            return await self._original.bulk_transition(
+                issues=issues,
+                transition=transition,
+                comment=comment,
+                resolution=resolution,
+                fields=fields,
+                auth=auth,
+            )
+
+        async def bulk_status_get(
+            self, operation_id: str, *, auth: YandexAuth | None = None
+        ) -> BulkChangeResult:
+            return await self._original.bulk_status_get(operation_id, auth=auth)
+
     return CacheCollection(
         queues=CachingQueuesProtocol,
         issues=CachingIssuesProtocol,
         global_data=CachingGlobalDataProtocol,
         users=CachingUsersProtocol,
+        boards=CachingBoardsProtocol,
+        filters=CachingFiltersProtocol,
+        components=CachingComponentsProtocol,
+        entities=CachingEntitiesProtocol,
+        dashboards=CachingDashboardsProtocol,
+        automations=CachingAutomationsProtocol,
+        bulkchange=CachingBulkChangeProtocol,
     )
