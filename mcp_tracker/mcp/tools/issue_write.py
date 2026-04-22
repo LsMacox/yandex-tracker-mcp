@@ -296,8 +296,9 @@ def register_issue_write_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
         start: Annotated[
             datetime.datetime | None,
             Field(
-                description="Optional start datetime for the worklog. "
-                "If timezone is not provided, UTC is assumed."
+                description="Start datetime for the worklog. "
+                "Tracker requires this field — if omitted, the server fills in "
+                "the current UTC time. If tz is not provided, UTC is assumed."
             ),
         ] = None,
     ) -> Worklog:

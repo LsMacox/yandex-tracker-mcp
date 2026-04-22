@@ -160,15 +160,23 @@ def register_issue_extras_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
 
     @mcp.tool(
         title="Upload Issue Attachment",
-        description="Upload a local file as an attachment to the issue. "
-        "file_path must point to a file on the MCP server filesystem.",
+        description=(
+            "Upload a local file as an attachment to the issue. "
+            "`file_path` MUST reference a file on the FILESYSTEM OF THE MCP SERVER "
+            "itself — not on the MCP client machine. Uploading files from a "
+            "remote client environment is not supported; copy the file onto the "
+            "server host first."
+        ),
     )
     async def issue_upload_attachment(
         ctx: Context[Any, AppContext],
         issue_id: IssueID,
         file_path: Annotated[
             str,
-            Field(description="Absolute or relative path to the file on this machine"),
+            Field(
+                description="Absolute or relative path to the file on the MCP server "
+                "host (NOT on the client side)."
+            ),
         ],
         filename: Annotated[
             str | None,

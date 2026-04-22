@@ -32,13 +32,33 @@ from mcp_tracker.tracker.proto.types.misc import (
 class TestFilters:
     async def test_filters_list(self, tracker_client: TrackerClient) -> None:
         with aioresponses() as m:
-            m.get(
-                "https://api.tracker.yandex.net/v3/filters",
+            m.post(
+                "https://api.tracker.yandex.net/v3/filters/_search",
                 payload=[{"id": "1", "name": "My filter", "query": "queue: TEST"}],
             )
             result = await tracker_client.filters_list()
         assert len(result) == 1
         assert isinstance(result[0], IssueFilter)
+
+    async def test_filters_list_unwraps_values(
+        self, tracker_client: TrackerClient
+    ) -> None:
+        """Tracker may wrap the result in {hits, pages, values}."""
+        with aioresponses() as m:
+            m.post(
+                "https://api.tracker.yandex.net/v3/filters/_search",
+                payload={
+                    "hits": 2,
+                    "pages": 1,
+                    "values": [
+                        {"id": "1", "name": "A", "query": "queue: TEST"},
+                        {"id": "2", "name": "B", "query": "queue: DEV"},
+                    ],
+                },
+            )
+            result = await tracker_client.filters_list()
+        assert len(result) == 2
+        assert result[1].id == "2"
 
     async def test_filter_create(self, tracker_client: TrackerClient) -> None:
         payload = {"id": "42", "name": "New", "query": "queue: TEST"}
@@ -369,6 +389,32 @@ class TestBoardsWrite:
             result = await tracker_client.sprint_create(7, name="Sprint A")
         assert isinstance(result, Sprint)
         assert result.id == 55
+
+
+class TestWorklogStartAutofill:
+    """Regression for 0.8.1: Tracker requires `start` even when docs mark it optional."""
+
+    async def test_adds_start_when_omitted(self, tracker_client: TrackerClient) -> None:
+        captured_body: dict[str, Any] = {}
+
+        def callback(url: Any, **kwargs: Any) -> Any:
+            from aioresponses.core import CallbackResult
+
+            captured_body.update(kwargs.get("json") or {})
+            return CallbackResult(
+                status=201,
+                body='{"id": 1, "duration": "PT1H"}',
+            )
+
+        with aioresponses() as m:
+            m.post(
+                "https://api.tracker.yandex.net/v3/issues/TEST-1/worklog",
+                callback=callback,
+            )
+            await tracker_client.issue_add_worklog("TEST-1", duration="PT1H")
+
+        assert "start" in captured_body
+        assert captured_body["start"].endswith("+0000")
 
 
 class TestRegressions:

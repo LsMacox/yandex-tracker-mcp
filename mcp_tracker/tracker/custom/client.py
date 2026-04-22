@@ -683,19 +683,22 @@ class TrackerClient(
             issue_id: Ключ задачи (например, "QUEUE-123")
             duration: Длительность в формате ISO 8601 (например, "PT1H30M")
             comment: Комментарий к записи
-            start: Время начала работ. Если не задано — используется текущее время на стороне Трекера.
+            start: Время начала работ. Если не задано — подставляется текущее UTC время
+                (Tracker API требует обязательный start и возвращает 422 без него).
             auth: Опциональная auth-структура (OAuth/Org) поверх конфигурации клиента
         """
         body: dict[str, Any] = {"duration": duration}
         if comment is not None:
             body["comment"] = comment
-        if start is not None:
-            # Если tz отсутствует — считаем, что время задано в UTC.
-            if start.tzinfo is None:
-                start = start.replace(tzinfo=datetime.timezone.utc)
-            start_utc = start.astimezone(datetime.timezone.utc)
-            # Формат "+0000" (без двоеточия) совместим с API Трекера.
-            body["start"] = start_utc.strftime("%Y-%m-%dT%H:%M:%S.%f%z")
+        # Tracker requires `start` even though older docs listed it as optional;
+        # default to `now()` in UTC so callers don't have to remember to pass it.
+        if start is None:
+            start = datetime.datetime.now(tz=datetime.timezone.utc)
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=datetime.timezone.utc)
+        start_utc = start.astimezone(datetime.timezone.utc)
+        # Формат "+0000" (без двоеточия) совместим с API Трекера.
+        body["start"] = start_utc.strftime("%Y-%m-%dT%H:%M:%S.%f%z")
 
         async with self._session.post(
             f"v3/issues/{issue_id}/worklog",
@@ -1590,11 +1593,29 @@ class TrackerClient(
     async def filters_list(
         self, *, auth: YandexAuth | None = None
     ) -> list[IssueFilter]:
-        async with self._session.get(
-            "v3/filters", headers=await self._build_headers(auth)
+        # Yandex Tracker searches filters via POST /v3/filters/_search;
+        # a bare GET /v3/filters returns 405.
+        async with self._session.post(
+            "v3/filters/_search",
+            headers=await self._build_headers(auth),
+            json={},
         ) as response:
-            response.raise_for_status()
-            return FilterList.model_validate_json(await response.read()).root
+            if response.status >= 400:
+                await _raise_tracker_error(response)
+            raw = await response.read()
+
+        # API may wrap results in {hits, pages, values} or return a bare list.
+        import json as _json
+
+        data = _json.loads(raw)
+        if isinstance(data, dict):
+            values = data.get("values", [])
+            if not isinstance(values, list):
+                values = []
+            return [IssueFilter.model_validate(v) for v in values]
+        if isinstance(data, list):
+            return [IssueFilter.model_validate(v) for v in data]
+        return []
 
     async def filter_get(
         self, filter_id: str, *, auth: YandexAuth | None = None

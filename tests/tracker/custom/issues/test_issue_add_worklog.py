@@ -46,7 +46,11 @@ class TestIssueAddWorklog:
             assert result.comment == "Work done on the issue"
 
         capture.assert_called_once()
-        capture.last_request.assert_json_body({"duration": "PT4H"})
+        # Client auto-fills `start` with current UTC because Tracker requires it.
+        body = capture.last_request.get_json_body()
+        assert body["duration"] == "PT4H"
+        assert "start" in body
+        assert body["start"].endswith("+0000")
 
     async def test_success_with_comment_and_start(
         self, tracker_client: TrackerClient
