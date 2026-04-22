@@ -124,6 +124,65 @@ class TestIssuesFind:
             assert issue.get("description") is None
 
 
+class TestIssuesFindFilterToYql:
+    async def test_filter_dict_converted_to_yql(
+        self,
+        client_session: ClientSession,
+        mock_issues_protocol: AsyncMock,
+        sample_issues: list[Issue],
+    ) -> None:
+        mock_issues_protocol.issues_find.return_value = sample_issues
+
+        result = await client_session.call_tool(
+            "issues_find",
+            {
+                "filter": {
+                    "queue": "TEST",
+                    "resolution": "empty",
+                    "assignee": "me",
+                },
+            },
+        )
+
+        assert not result.isError
+        call_kwargs = mock_issues_protocol.issues_find.call_args.kwargs
+        assert call_kwargs["filter"] is None
+        assert call_kwargs["query"] == (
+            "Queue: TEST AND Resolution: empty() AND Assignee: me()"
+        )
+
+    async def test_filter_combined_with_query(
+        self,
+        client_session: ClientSession,
+        mock_issues_protocol: AsyncMock,
+        sample_issues: list[Issue],
+    ) -> None:
+        mock_issues_protocol.issues_find.return_value = sample_issues
+
+        result = await client_session.call_tool(
+            "issues_find",
+            {
+                "query": "Tags: urgent",
+                "filter": {"queue": "TEST"},
+            },
+        )
+
+        assert not result.isError
+        call_kwargs = mock_issues_protocol.issues_find.call_args.kwargs
+        assert call_kwargs["query"] == "(Tags: urgent) AND (Queue: TEST)"
+
+    async def test_invalid_filter_returns_error(
+        self,
+        client_session: ClientSession,
+    ) -> None:
+        # Empty list for a field → can't render valid YQL.
+        result = await client_session.call_tool(
+            "issues_find",
+            {"filter": {"status": []}},
+        )
+        assert result.isError
+
+
 class TestIssuesCount:
     async def test_returns_count(
         self,

@@ -33,10 +33,21 @@ Renamed / merged (old → new):
 - `users_get_all` + `users_search` + `user_get` + `user_get_current` → `users(action=...)`
 - `bulk_update` + `bulk_move` + `bulk_transition` + `bulk_status_get` → `bulk(action=...)`
 
+### Features
+- **Structured `filter` → YQL inside `issues_find`.** The Tracker `filter` body
+  parameter returned 422 for many natural combinations; we now convert dicts to
+  YQL client-side. Supports scalars, OR-lists, magic values (`empty`, `me`,
+  `today`, `yesterday`, `now`, `notEmpty`, `resolved`, `unresolved`, ...),
+  `{from, to}` / `{gt, lt, gte, lte}` range objects, lowercase aliases
+  (`queue` → `Queue`, `board` → `Boards` plural, etc.), auto-quoting of values
+  with spaces, and pass-through for custom/local field ids. `query` and
+  `filter` can now be combined — they're joined with AND.
+
 ### Internal
 - Added `require_write_mode()` helper in `_access.py` for internal read-only gating
 - Added `_dump()` serializer to ship Pydantic models inside `dict[str, Any]` return types
 - Updated test expectations (`READ_ONLY_TOOL_NAMES` / `WRITE_TOOL_NAMES`) for the new tool surface
+- New module `mcp_tracker/mcp/yql.py` houses the filter→YQL converter
 
 ## [0.6.3] - 2026-02-08
 

@@ -16,6 +16,7 @@ from mcp_tracker.mcp.params import (
 )
 from mcp_tracker.mcp.tools._access import check_issue_access
 from mcp_tracker.mcp.utils import get_yandex_auth, set_non_needed_fields_null
+from mcp_tracker.mcp.yql import FilterConversionError, filter_to_yql
 from mcp_tracker.settings import Settings
 from mcp_tracker.tracker.proto.types.issues import (
     Issue,
@@ -58,27 +59,37 @@ def register_issue_read_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
     @mcp.tool(
         title="Find Issues",
         description=(
-            "Find Yandex Tracker issues. Provide either a YQL `query` string OR a "
-            "structured `filter` dict — not both.\n\n"
-            "═══ YQL cheatsheet ═══\n"
-            "Field names are PascalCase and case-sensitive:\n"
-            "  • `Queue: TEST` — by queue key\n"
+            "Find Yandex Tracker issues. Provide a YQL `query` string, a structured "
+            "`filter` dict, or both — when both are given they're joined with AND.\n\n"
+            "═══ Structured `filter` → YQL (auto-converted) ═══\n"
+            "Keys are lowercased aliases (queue, assignee, resolution, status, type, "
+            "priority, tags, components, sprint, board → Boards plural, created, "
+            "updated, ...). Unknown keys pass through as-is (good for custom fields).\n"
+            "Values:\n"
+            "  • scalar → `Field: value` (quoted when it contains spaces/special chars)\n"
+            "  • list → `Field: a, b, c` (OR-list)\n"
+            "  • magic strings → YQL functions: `empty`, `notEmpty`, `me`, `today`, "
+            "`yesterday`, `now`, `week`, `month`, `year`, `resolved`, `unresolved`\n"
+            "  • `{from, to}` → range `Field: from .. to`; `{gt, lt, gte, lte}` → "
+            "comparison clauses joined with AND\n\n"
+            "Examples:\n"
+            "  `{queue: 'TEST', resolution: 'empty', assignee: 'me'}` →\n"
+            "    `Queue: TEST AND Resolution: empty() AND Assignee: me()`\n"
+            "  `{status: ['open', 'inProgress'], board: 'My Board'}` →\n"
+            '    `Status: open, inProgress AND Boards: "My Board"`\n'
+            "  `{created: {from: '2024-01-01', to: '2024-12-31'}}` →\n"
+            "    `Created: 2024-01-01 .. 2024-12-31`\n\n"
+            "═══ Raw YQL `query` ═══\n"
+            "Field names are PascalCase. Key tokens:\n"
             '  • `Boards: "My Board"` — PLURAL, by board NAME (NOT `Board:`, NOT id)\n'
-            "  • `Assignee: me()`, `Author: me()`, `Follower: me()`\n"
-            "  • `Resolution: empty()` — open issues; `Resolution: notEmpty()` — closed\n"
-            "  • `Status: open, inProgress` — OR-list of statuses\n"
-            "  • `Type: bug, incident` — OR-list of issue types\n"
-            "  • `Priority: critical, blocker`\n"
-            "  • `Tags: urgent` / `Components: Core` / `Version: 1.2.0`\n"
-            '  • `Sprint: "Sprint 1"` — by name\n'
+            "  • `Assignee: me()`, `Resolution: empty()`\n"
+            "  • `Status: open, inProgress` — OR-list\n"
             "  • `Created: > 2024-01-01` / `Updated: today() - 7d`\n"
-            '  • `Summary: ~"keyword"` — contains; `Description: ~"..."`\n'
-            "Combine with `AND`, `OR`, `NOT`; group with parentheses.\n"
-            'Sort INSIDE the query: append `"Sort By": Updated DESC, Key ASC`.\n\n'
+            '  • `Summary: ~"keyword"` — fulltext contains\n'
+            "Combine with `AND`, `OR`, `NOT`; group with parentheses.\n\n"
             "═══ `order` parameter ═══\n"
-            "Use `['-updated_at', '+priority']` (prefix `-` DESC, `+`/none ASC).\n"
-            'When combined with `query`, it\'s auto-folded into the `"Sort By"` clause.\n'
-            "With `filter`, it's sent as-is in the body.\n\n"
+            "Use `['-updated', '+priority']` (prefix `-` DESC, `+`/none ASC). Always "
+            'folded into the query as `"Sort By": ...`.\n\n'
             "═══ Standard enum keys ═══\n"
             "Status: `open, inProgress, needInfo, closed, resolved, reopened`.\n"
             "Type: `task, bug, feature, improvement, incident, epic`.\n"
@@ -92,20 +103,20 @@ def register_issue_read_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
         ctx: Context[Any, AppContext],
         query: Annotated[
             str | None,
-            Field(
-                description="YQL query (see issues query docs). Mutually usable with filter."
-            ),
+            Field(description="YQL query. Combined with filter via AND if both given."),
         ] = None,
         filter: Annotated[
             dict[str, Any] | None,
             Field(
-                description="Structured filter object; keys are field ids, values are scalars or lists."
+                description="Structured filter; keys are field names/aliases, values "
+                "are scalars, lists, magic strings (empty/me/today/...), or "
+                "{from,to}/{gt,lt,gte,lte} ranges. Auto-converted to YQL."
             ),
         ] = None,
         order: Annotated[
             list[str] | None,
             Field(
-                description="Sort by field keys; prefix with '+' / '-' for asc/desc, default ascending."
+                description="Sort by field keys; prefix '-' for DESC, '+' or none for ASC."
             ),
         ] = None,
         keys: Annotated[
@@ -134,9 +145,21 @@ def register_issue_read_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
                 "cannot search without any criteria."
             )
 
+        # Convert structured filter → YQL and fold into `query` so there's one
+        # codepath to the API. Tracker's raw `filter` body param is strict about
+        # field/value shapes (empty(), "me", plurals, ranges, ...); building YQL
+        # here gives predictable behavior.
+        effective_query: str | None = query
+        if filter is not None:
+            try:
+                converted = filter_to_yql(filter)
+            except FilterConversionError as e:
+                raise ValueError(f"Invalid filter: {e}") from e
+            effective_query = f"({query}) AND ({converted})" if query else converted
+
         issues = await ctx.request_context.lifespan_context.issues.issues_find(
-            query=query,
-            filter=filter,
+            query=effective_query,
+            filter=None,
             order=order,
             keys=keys,
             per_page=per_page,
