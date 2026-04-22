@@ -190,6 +190,71 @@ def register_board_write_tools(_settings: Settings, mcp: FastMCP[Any]) -> None:
         return {"ok": True}
 
     @mcp.tool(
+        title="Update Sprint",
+        description="Update sprint fields (name, dates, status) via PATCH. "
+        "Pass only fields to change in `fields`.",
+    )
+    async def sprint_update(
+        ctx: Context[Any, AppContext, Request],
+        sprint_id: Annotated[
+            str | int, Field(description="Sprint identifier from board_get_sprints")
+        ],
+        fields: Annotated[
+            dict[str, Any],
+            Field(
+                description="JSON body with fields to update "
+                "(name, startDate, endDate, startDateTime, endDateTime)."
+            ),
+        ],
+    ) -> Sprint:
+        return await ctx.request_context.lifespan_context.boards.sprint_update(
+            sprint_id,
+            fields=fields,
+            auth=get_yandex_auth(ctx),
+        )
+
+    @mcp.tool(
+        title="Delete Sprint",
+        description="Delete a sprint. Archiving is done via `sprint_finish` — this "
+        "removes the sprint entirely.",
+        annotations=ToolAnnotations(destructiveHint=True),
+    )
+    async def sprint_delete(
+        ctx: Context[Any, AppContext, Request],
+        sprint_id: Annotated[str | int, Field(description="Sprint identifier")],
+    ) -> dict[str, bool]:
+        await ctx.request_context.lifespan_context.boards.sprint_delete(
+            sprint_id,
+            auth=get_yandex_auth(ctx),
+        )
+        return {"ok": True}
+
+    @mcp.tool(
+        title="Start Sprint",
+        description="Move a draft sprint to in_progress state.",
+    )
+    async def sprint_start(
+        ctx: Context[Any, AppContext, Request],
+        sprint_id: Annotated[str | int, Field(description="Sprint identifier")],
+    ) -> Sprint:
+        return await ctx.request_context.lifespan_context.boards.sprint_start(
+            sprint_id, auth=get_yandex_auth(ctx)
+        )
+
+    @mcp.tool(
+        title="Finish Sprint",
+        description="Finish (close / archive) an in_progress sprint. "
+        "This is the closest equivalent to 'archive a sprint' in the Tracker API.",
+    )
+    async def sprint_finish(
+        ctx: Context[Any, AppContext, Request],
+        sprint_id: Annotated[str | int, Field(description="Sprint identifier")],
+    ) -> Sprint:
+        return await ctx.request_context.lifespan_context.boards.sprint_finish(
+            sprint_id, auth=get_yandex_auth(ctx)
+        )
+
+    @mcp.tool(
         title="Create Sprint",
         description="Create a new sprint on the given board. "
         "Dates are ISO strings (startDate/endDate as YYYY-MM-DD).",

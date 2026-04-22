@@ -230,7 +230,8 @@ class IssueProtocol(Protocol):
         self,
         issue_id: str,
         *,
-        file_path: str,
+        file_path: str | None = None,
+        content_base64: str | None = None,
         filename: str | None = None,
         auth: YandexAuth | None = None,
     ) -> IssueAttachment: ...
@@ -249,9 +250,10 @@ class IssueProtocol(Protocol):
         attachment_id: str,
         filename: str,
         *,
-        dest_path: str,
+        dest_path: str | None = None,
+        return_base64: bool = False,
         auth: YandexAuth | None = None,
-    ) -> str: ...
+    ) -> dict[str, str]: ...
 
     # --- misc issue ops ---
     async def issue_add_tags(

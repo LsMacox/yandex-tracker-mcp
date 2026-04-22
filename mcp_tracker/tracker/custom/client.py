@@ -388,6 +388,37 @@ class TrackerClient(
 
         return headers
 
+    async def queue_create(
+        self,
+        *,
+        key: str,
+        name: str,
+        lead: str,
+        default_type: str,
+        default_priority: str,
+        extra: dict[str, Any] | None = None,
+        auth: YandexAuth | None = None,
+    ) -> Queue:
+        body: dict[str, Any] = {
+            "key": key,
+            "name": name,
+            "lead": lead,
+            "defaultType": default_type,
+            "defaultPriority": default_priority,
+        }
+        if extra:
+            for k, v in extra.items():
+                body.setdefault(k, v)
+
+        async with self._session.post(
+            "v3/queues",
+            headers=await self._build_headers(auth),
+            json=body,
+        ) as response:
+            if response.status >= 400:
+                await _raise_tracker_error(response)
+            return Queue.model_validate_json(await response.read())
+
     async def queues_list(
         self, per_page: int = 100, page: int = 1, *, auth: YandexAuth | None = None
     ) -> list[Queue]:
@@ -398,7 +429,8 @@ class TrackerClient(
         async with self._session.get(
             "v3/queues", headers=await self._build_headers(auth), params=params
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return QueueList.model_validate_json(await response.read()).root
 
     async def queues_get_local_fields(
@@ -407,7 +439,8 @@ class TrackerClient(
         async with self._session.get(
             f"v3/queues/{queue_id}/localFields", headers=await self._build_headers(auth)
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return LocalFieldList.model_validate_json(await response.read()).root
 
     async def queues_get_tags(
@@ -416,7 +449,8 @@ class TrackerClient(
         async with self._session.get(
             f"v3/queues/{queue_id}/tags", headers=await self._build_headers(auth)
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return QueueTagList.model_validate_json(await response.read()).root
 
     async def queues_get_versions(
@@ -425,7 +459,8 @@ class TrackerClient(
         async with self._session.get(
             f"v3/queues/{queue_id}/versions", headers=await self._build_headers(auth)
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return VersionList.model_validate_json(await response.read()).root
 
     async def queues_get_fields(
@@ -434,7 +469,8 @@ class TrackerClient(
         async with self._session.get(
             f"v3/queues/{queue_id}/fields", headers=await self._build_headers(auth)
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return GlobalFieldList.model_validate_json(await response.read()).root
 
     async def queue_get(
@@ -453,7 +489,8 @@ class TrackerClient(
             headers=await self._build_headers(auth),
             params=params if params else None,
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return Queue.model_validate_json(await response.read())
 
     async def get_global_fields(
@@ -462,14 +499,16 @@ class TrackerClient(
         async with self._session.get(
             "v3/fields", headers=await self._build_headers(auth)
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return GlobalFieldList.model_validate_json(await response.read()).root
 
     async def get_statuses(self, *, auth: YandexAuth | None = None) -> list[Status]:
         async with self._session.get(
             "v3/statuses", headers=await self._build_headers(auth)
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return StatusList.model_validate_json(await response.read()).root
 
     async def get_issue_types(
@@ -478,14 +517,16 @@ class TrackerClient(
         async with self._session.get(
             "v3/issuetypes", headers=await self._build_headers(auth)
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return IssueTypeList.model_validate_json(await response.read()).root
 
     async def get_priorities(self, *, auth: YandexAuth | None = None) -> list[Priority]:
         async with self._session.get(
             "v3/priorities", headers=await self._build_headers(auth)
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return PriorityList.model_validate_json(await response.read()).root
 
     async def get_resolutions(
@@ -494,7 +535,8 @@ class TrackerClient(
         async with self._session.get(
             "v3/resolutions", headers=await self._build_headers(auth)
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return ResolutionList.model_validate_json(await response.read()).root
 
     async def issue_get(
@@ -505,7 +547,8 @@ class TrackerClient(
         ) as response:
             if response.status == 404:
                 raise IssueNotFound(issue_id)
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return Issue.model_validate_json(await response.read())
 
     async def issues_get_links(
@@ -516,7 +559,8 @@ class TrackerClient(
         ) as response:
             if response.status == 404:
                 raise IssueNotFound(issue_id)
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return IssueLinkList.model_validate_json(await response.read()).root
 
     async def issue_get_comments(
@@ -527,7 +571,8 @@ class TrackerClient(
         ) as response:
             if response.status == 404:
                 raise IssueNotFound(issue_id)
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return IssueCommentList.model_validate_json(await response.read()).root
 
     async def issue_add_comment(
@@ -562,7 +607,8 @@ class TrackerClient(
         ) as response:
             if response.status == 404:
                 raise IssueNotFound(issue_id)
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return IssueComment.model_validate_json(await response.read())
 
     async def issue_update_comment(
@@ -592,7 +638,8 @@ class TrackerClient(
         ) as response:
             if response.status == 404:
                 raise IssueNotFound(issue_id)
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return IssueComment.model_validate_json(await response.read())
 
     async def issue_delete_comment(
@@ -609,7 +656,8 @@ class TrackerClient(
         ) as response:
             if response.status == 404:
                 raise IssueNotFound(issue_id)
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return None
 
     async def issues_find(
@@ -665,7 +713,8 @@ class TrackerClient(
         ) as response:
             if response.status == 404:
                 raise IssueNotFound(issue_id)
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return WorklogList.model_validate_json(await response.read()).root
 
     async def issue_add_worklog(
@@ -707,7 +756,8 @@ class TrackerClient(
         ) as response:
             if response.status == 404:
                 raise IssueNotFound(issue_id)
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return Worklog.model_validate_json(await response.read())
 
     async def issue_update_worklog(
@@ -739,7 +789,8 @@ class TrackerClient(
         ) as response:
             if response.status == 404:
                 raise IssueNotFound(issue_id)
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return Worklog.model_validate_json(await response.read())
 
     async def issue_delete_worklog(
@@ -756,7 +807,8 @@ class TrackerClient(
         ) as response:
             if response.status == 404:
                 raise IssueNotFound(issue_id)
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return None
 
     async def issue_get_attachments(
@@ -767,7 +819,8 @@ class TrackerClient(
         ) as response:
             if response.status == 404:
                 raise IssueNotFound(issue_id)
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return IssueAttachmentList.model_validate_json(await response.read()).root
 
     async def users_list(
@@ -780,7 +833,8 @@ class TrackerClient(
         async with self._session.get(
             "v3/users", headers=await self._build_headers(auth), params=params
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return UserList.model_validate_json(await response.read()).root
 
     async def user_get(
@@ -791,14 +845,16 @@ class TrackerClient(
         ) as response:
             if response.status == 404:
                 return None
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return User.model_validate_json(await response.read())
 
     async def user_get_current(self, *, auth: YandexAuth | None = None) -> User:
         async with self._session.get(
             "v3/myself", headers=await self._build_headers(auth)
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return User.model_validate_json(await response.read())
 
     async def issue_get_checklist(
@@ -868,7 +924,8 @@ class TrackerClient(
         async with self._session.post(
             "v3/issues", headers=await self._build_headers(auth), json=body
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return Issue.model_validate_json(await response.read())
 
     async def issue_get_transitions(
@@ -879,7 +936,8 @@ class TrackerClient(
         ) as response:
             if response.status == 404:
                 raise IssueNotFound(issue_id)
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return IssueTransitionList.model_validate_json(await response.read()).root
 
     # Fields that expect `{"key": value}` reference objects in Tracker API;
@@ -1056,7 +1114,8 @@ class TrackerClient(
         ) as response:
             if response.status == 404:
                 raise IssueNotFound(issue_id)
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return Issue.model_validate_json(await response.read())
 
     # --- issue links write ---
@@ -1076,7 +1135,8 @@ class TrackerClient(
         ) as response:
             if response.status == 404:
                 raise IssueNotFound(issue_id)
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             data = await response.read()
         try:
             return IssueLink.model_validate_json(data)
@@ -1099,7 +1159,8 @@ class TrackerClient(
         ) as response:
             if response.status == 404:
                 raise IssueNotFound(issue_id)
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
 
     # --- checklist write ---
     @staticmethod
@@ -1226,16 +1287,36 @@ class TrackerClient(
         self,
         issue_id: str,
         *,
-        file_path: str,
+        file_path: str | None = None,
+        content_base64: str | None = None,
         filename: str | None = None,
         auth: YandexAuth | None = None,
     ) -> IssueAttachment:
-        filename = filename or os.path.basename(file_path)
-        # Read into memory so we don't leak the file handle on Windows
-        # (where open handles block subsequent unlink) and avoid aiohttp
-        # holding the fd for the lifetime of the form.
-        with open(file_path, "rb") as fh:
-            file_bytes = fh.read()
+        # Exactly one source must be given — either a server-side path or
+        # base64-encoded bytes supplied directly by the caller (useful when
+        # the MCP client has no access to the server's filesystem).
+        if (file_path is None) == (content_base64 is None):
+            raise ValueError(
+                "Provide exactly one of `file_path` (server-side file) or "
+                "`content_base64` (bytes supplied by the client)."
+            )
+
+        if file_path is not None:
+            filename = filename or os.path.basename(file_path)
+            with open(file_path, "rb") as fh:
+                file_bytes = fh.read()
+        else:
+            if not filename:
+                raise ValueError(
+                    "`filename` is required when uploading via content_base64."
+                )
+            import base64 as _base64
+
+            try:
+                file_bytes = _base64.b64decode(content_base64 or "", validate=True)
+            except Exception as exc:
+                raise ValueError(f"content_base64 is not valid base64: {exc}") from exc
+
         form = FormData()
         form.add_field("file", file_bytes, filename=filename)
         async with self._session.post(
@@ -1262,7 +1343,8 @@ class TrackerClient(
         ) as response:
             if response.status == 404:
                 raise IssueNotFound(issue_id)
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
 
     async def issue_download_attachment(
         self,
@@ -1270,23 +1352,44 @@ class TrackerClient(
         attachment_id: str,
         filename: str,
         *,
-        dest_path: str,
+        dest_path: str | None = None,
+        return_base64: bool = False,
         auth: YandexAuth | None = None,
-    ) -> str:
+    ) -> dict[str, str]:
+        """Download an attachment.
+
+        Pass ``dest_path`` to save to the MCP server's filesystem, or
+        ``return_base64=True`` to get the bytes back as base64 (useful when
+        the caller has no access to the server's FS). Both can be combined.
+        Returns a dict with optional ``path`` and ``content_base64`` keys.
+        """
+        if dest_path is None and not return_base64:
+            raise ValueError(
+                "Provide at least one of `dest_path` or `return_base64=True`."
+            )
+
         async with self._session.get(
             f"v3/issues/{issue_id}/attachments/{attachment_id}/{filename}",
             headers=await self._build_headers(auth),
         ) as response:
             if response.status == 404:
                 raise IssueNotFound(issue_id)
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             data = await response.read()
 
-        if os.path.isdir(dest_path):
-            dest_path = os.path.join(dest_path, filename)
-        with open(dest_path, "wb") as fh:
-            fh.write(data)
-        return dest_path
+        result: dict[str, str] = {}
+        if dest_path is not None:
+            if os.path.isdir(dest_path):
+                dest_path = os.path.join(dest_path, filename)
+            with open(dest_path, "wb") as fh:
+                fh.write(data)
+            result["path"] = dest_path
+        if return_base64:
+            import base64 as _base64
+
+            result["content_base64"] = _base64.b64encode(data).decode("ascii")
+        return result
 
     # --- misc issue ops ---
     async def issue_add_tags(
@@ -1304,7 +1407,8 @@ class TrackerClient(
         ) as response:
             if response.status == 404:
                 raise IssueNotFound(issue_id)
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return Issue.model_validate_json(await response.read())
 
     async def issue_remove_tags(
@@ -1322,7 +1426,8 @@ class TrackerClient(
         ) as response:
             if response.status == 404:
                 raise IssueNotFound(issue_id)
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return Issue.model_validate_json(await response.read())
 
     async def issue_move_to_queue(
@@ -1360,14 +1465,16 @@ class TrackerClient(
         ) as response:
             if response.status == 404:
                 raise IssueNotFound(issue_id)
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return Issue.model_validate_json(await response.read())
 
     async def boards_list(self, *, auth: YandexAuth | None = None) -> list[Board]:
         async with self._session.get(
             "v3/boards", headers=await self._build_headers(auth)
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return BoardList.model_validate_json(await response.read()).root
 
     async def board_get(
@@ -1376,7 +1483,8 @@ class TrackerClient(
         async with self._session.get(
             f"v3/boards/{board_id}", headers=await self._build_headers(auth)
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return Board.model_validate_json(await response.read())
 
     async def board_get_columns(
@@ -1386,7 +1494,8 @@ class TrackerClient(
             f"v3/boards/{board_id}/columns",
             headers=await self._build_headers(auth),
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return BoardColumnList.model_validate_json(await response.read()).root
 
     async def board_get_sprints(
@@ -1411,7 +1520,8 @@ class TrackerClient(
         async with self._session.get(
             f"v3/sprints/{sprint_id}", headers=await self._build_headers(auth)
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return Sprint.model_validate_json(await response.read())
 
     async def board_create(
@@ -1456,7 +1566,8 @@ class TrackerClient(
         async with self._session.post(
             "v3/boards", headers=await self._build_headers(auth), json=body
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return Board.model_validate_json(await response.read())
 
     async def board_update(
@@ -1471,7 +1582,8 @@ class TrackerClient(
             headers=await self._build_headers(auth),
             json=fields,
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return Board.model_validate_json(await response.read())
 
     async def board_delete(
@@ -1480,7 +1592,8 @@ class TrackerClient(
         async with self._session.delete(
             f"v3/boards/{board_id}", headers=await self._build_headers(auth)
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
 
     async def board_column_create(
         self,
@@ -1500,7 +1613,8 @@ class TrackerClient(
             headers=headers,
             json={"name": name, "statuses": statuses},
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return BoardColumn.model_validate_json(await response.read())
 
     async def board_column_update(
@@ -1528,7 +1642,8 @@ class TrackerClient(
             headers=headers,
             json=body,
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return BoardColumn.model_validate_json(await response.read())
 
     async def board_column_delete(
@@ -1547,7 +1662,8 @@ class TrackerClient(
             f"v3/boards/{board_id}/columns/{column_id}",
             headers=headers,
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
 
     async def sprint_create(
         self,
@@ -1589,6 +1705,65 @@ class TrackerClient(
                 await _raise_tracker_error(response)
             return Sprint.model_validate_json(await response.read())
 
+    async def sprint_update(
+        self,
+        sprint_id: str | int,
+        *,
+        fields: dict[str, Any],
+        auth: YandexAuth | None = None,
+    ) -> Sprint:
+        async with self._session.patch(
+            f"v3/sprints/{sprint_id}",
+            headers=await self._build_headers(auth),
+            json=fields,
+        ) as response:
+            if response.status >= 400:
+                await _raise_tracker_error(response)
+            return Sprint.model_validate_json(await response.read())
+
+    async def sprint_delete(
+        self,
+        sprint_id: str | int,
+        *,
+        auth: YandexAuth | None = None,
+    ) -> None:
+        async with self._session.delete(
+            f"v3/sprints/{sprint_id}",
+            headers=await self._build_headers(auth),
+        ) as response:
+            if response.status >= 400:
+                await _raise_tracker_error(response)
+
+    async def sprint_start(
+        self,
+        sprint_id: str | int,
+        *,
+        auth: YandexAuth | None = None,
+    ) -> Sprint:
+        async with self._session.post(
+            f"v3/sprints/{sprint_id}/_start",
+            headers=await self._build_headers(auth),
+            json={},
+        ) as response:
+            if response.status >= 400:
+                await _raise_tracker_error(response)
+            return Sprint.model_validate_json(await response.read())
+
+    async def sprint_finish(
+        self,
+        sprint_id: str | int,
+        *,
+        auth: YandexAuth | None = None,
+    ) -> Sprint:
+        async with self._session.post(
+            f"v3/sprints/{sprint_id}/_finish",
+            headers=await self._build_headers(auth),
+            json={},
+        ) as response:
+            if response.status >= 400:
+                await _raise_tracker_error(response)
+            return Sprint.model_validate_json(await response.read())
+
     # --- filters ---
     async def filters_list(
         self, *, auth: YandexAuth | None = None
@@ -1623,7 +1798,8 @@ class TrackerClient(
         async with self._session.get(
             f"v3/filters/{filter_id}", headers=await self._build_headers(auth)
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return IssueFilter.model_validate_json(await response.read())
 
     async def filter_create(
@@ -1646,7 +1822,8 @@ class TrackerClient(
             headers=await self._build_headers(auth),
             json=body,
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return IssueFilter.model_validate_json(await response.read())
 
     async def filter_update(
@@ -1661,7 +1838,8 @@ class TrackerClient(
             headers=await self._build_headers(auth),
             json=fields,
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return IssueFilter.model_validate_json(await response.read())
 
     async def filter_delete(
@@ -1670,7 +1848,8 @@ class TrackerClient(
         async with self._session.delete(
             f"v3/filters/{filter_id}", headers=await self._build_headers(auth)
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
 
     # --- components ---
     async def components_list(
@@ -1686,7 +1865,8 @@ class TrackerClient(
             headers=await self._build_headers(auth),
             params=params,
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return ComponentList.model_validate_json(await response.read()).root
 
     async def component_get(
@@ -1696,7 +1876,8 @@ class TrackerClient(
             f"v3/components/{component_id}",
             headers=await self._build_headers(auth),
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return Component.model_validate_json(await response.read())
 
     async def component_create(
@@ -1725,7 +1906,8 @@ class TrackerClient(
             headers=await self._build_headers(auth),
             json=body,
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return Component.model_validate_json(await response.read())
 
     async def component_update(
@@ -1836,7 +2018,8 @@ class TrackerClient(
             headers=await self._build_headers(auth),
             params=params if params else None,
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             import json
 
             return json.loads(await response.read())
@@ -1853,7 +2036,8 @@ class TrackerClient(
             headers=await self._build_headers(auth),
             json={"fields": fields},
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             import json
 
             return json.loads(await response.read())
@@ -1871,7 +2055,8 @@ class TrackerClient(
             headers=await self._build_headers(auth),
             json={"fields": fields},
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             import json
 
             return json.loads(await response.read())
@@ -1887,7 +2072,8 @@ class TrackerClient(
             f"v3/entities/{entity_type}/{entity_id}",
             headers=await self._build_headers(auth),
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
 
     async def projects_search(
         self,
@@ -1959,7 +2145,8 @@ class TrackerClient(
             headers=await self._build_headers(auth),
             params=params,
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return ProjectLegacyList.model_validate_json(await response.read()).root
 
     # --- dashboards ---
@@ -2060,7 +2247,8 @@ class TrackerClient(
             f"v3/dashboards/{dashboard_id}",
             headers=await self._build_headers(auth),
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
 
     # --- automations ---
     async def triggers_list(
@@ -2070,7 +2258,8 @@ class TrackerClient(
             f"v3/queues/{queue_id}/triggers",
             headers=await self._build_headers(auth),
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return TriggerList.model_validate_json(await response.read()).root
 
     async def trigger_get(
@@ -2084,7 +2273,8 @@ class TrackerClient(
             f"v3/queues/{queue_id}/triggers/{trigger_id}",
             headers=await self._build_headers(auth),
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return Trigger.model_validate_json(await response.read())
 
     async def trigger_create(
@@ -2111,7 +2301,8 @@ class TrackerClient(
             headers=await self._build_headers(auth),
             json=body,
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return Trigger.model_validate_json(await response.read())
 
     async def trigger_update(
@@ -2127,7 +2318,8 @@ class TrackerClient(
             headers=await self._build_headers(auth),
             json=fields,
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return Trigger.model_validate_json(await response.read())
 
     async def trigger_delete(
@@ -2141,7 +2333,8 @@ class TrackerClient(
             f"v3/queues/{queue_id}/triggers/{trigger_id}",
             headers=await self._build_headers(auth),
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
 
     async def autoactions_list(
         self, queue_id: str, *, auth: YandexAuth | None = None
@@ -2150,7 +2343,8 @@ class TrackerClient(
             f"v3/queues/{queue_id}/autoactions",
             headers=await self._build_headers(auth),
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return AutoactionList.model_validate_json(await response.read()).root
 
     async def autoaction_get(
@@ -2164,7 +2358,8 @@ class TrackerClient(
             f"v3/queues/{queue_id}/autoactions/{action_id}",
             headers=await self._build_headers(auth),
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return Autoaction.model_validate_json(await response.read())
 
     async def autoaction_create(
@@ -2196,7 +2391,8 @@ class TrackerClient(
             headers=await self._build_headers(auth),
             json=body,
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return Autoaction.model_validate_json(await response.read())
 
     async def autoaction_update(
@@ -2212,7 +2408,8 @@ class TrackerClient(
             headers=await self._build_headers(auth),
             json=fields,
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return Autoaction.model_validate_json(await response.read())
 
     async def autoaction_delete(
@@ -2226,7 +2423,8 @@ class TrackerClient(
             f"v3/queues/{queue_id}/autoactions/{action_id}",
             headers=await self._build_headers(auth),
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
 
     async def macros_list(
         self, queue_id: str, *, auth: YandexAuth | None = None
@@ -2235,7 +2433,8 @@ class TrackerClient(
             f"v3/queues/{queue_id}/macros",
             headers=await self._build_headers(auth),
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return MacroList.model_validate_json(await response.read()).root
 
     async def macro_get(
@@ -2249,7 +2448,8 @@ class TrackerClient(
             f"v3/queues/{queue_id}/macros/{macro_id}",
             headers=await self._build_headers(auth),
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return Macro.model_validate_json(await response.read())
 
     async def macro_create(
@@ -2275,7 +2475,8 @@ class TrackerClient(
             headers=await self._build_headers(auth),
             json=payload,
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return Macro.model_validate_json(await response.read())
 
     async def macro_update(
@@ -2291,7 +2492,8 @@ class TrackerClient(
             headers=await self._build_headers(auth),
             json=fields,
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return Macro.model_validate_json(await response.read())
 
     async def macro_delete(
@@ -2305,13 +2507,15 @@ class TrackerClient(
             f"v3/queues/{queue_id}/macros/{macro_id}",
             headers=await self._build_headers(auth),
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
 
     async def workflows_list(self, *, auth: YandexAuth | None = None) -> list[Workflow]:
         async with self._session.get(
             "v3/workflows", headers=await self._build_headers(auth)
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return WorkflowList.model_validate_json(await response.read()).root
 
     async def queue_workflow_get(
@@ -2349,7 +2553,8 @@ class TrackerClient(
             headers=await self._build_headers(auth),
             json=body,
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return BulkChangeResult.model_validate_json(await response.read())
 
     async def bulk_move(
@@ -2378,7 +2583,8 @@ class TrackerClient(
             headers=await self._build_headers(auth),
             json=body,
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return BulkChangeResult.model_validate_json(await response.read())
 
     async def bulk_transition(
@@ -2403,7 +2609,8 @@ class TrackerClient(
             headers=await self._build_headers(auth),
             json=body,
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return BulkChangeResult.model_validate_json(await response.read())
 
     async def bulk_status_get(
@@ -2413,5 +2620,6 @@ class TrackerClient(
             f"v2/bulkchange/{operation_id}",
             headers=await self._build_headers(auth),
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return BulkChangeResult.model_validate_json(await response.read())

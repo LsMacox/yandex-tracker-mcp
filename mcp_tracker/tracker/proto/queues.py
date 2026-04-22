@@ -1,4 +1,4 @@
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from .common import YandexAuth
 from .types.fields import GlobalField, LocalField
@@ -34,6 +34,18 @@ class QueuesProtocol(Protocol):
     async def queues_get_fields(
         self, queue_id: str, *, auth: YandexAuth | None = None
     ) -> list[GlobalField]: ...
+
+    async def queue_create(
+        self,
+        *,
+        key: str,
+        name: str,
+        lead: str,
+        default_type: str,
+        default_priority: str,
+        extra: dict[str, Any] | None = None,
+        auth: YandexAuth | None = None,
+    ) -> Queue: ...
 
 
 class QueuesProtocolWrap(QueuesProtocol):

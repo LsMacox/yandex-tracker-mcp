@@ -32,6 +32,7 @@ from mcp_tracker.mcp.tools.project import (
     register_project_write_tools,
 )
 from mcp_tracker.mcp.tools.queue import register_queue_tools
+from mcp_tracker.mcp.tools.queue_write import register_queue_write_tools
 from mcp_tracker.mcp.tools.user import register_user_tools
 from mcp_tracker.settings import Settings
 
@@ -55,6 +56,7 @@ def register_all_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
         register_issue_write_tools(settings, mcp)
         register_issue_extras_tools(settings, mcp)
         register_board_write_tools(settings, mcp)
+        register_queue_write_tools(settings, mcp)
         register_filter_write_tools(settings, mcp)
         register_component_write_tools(settings, mcp)
         register_project_write_tools(settings, mcp)

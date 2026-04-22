@@ -125,6 +125,27 @@ def make_cached_protocols(
         ) -> Queue:
             return await self._original.queue_get(queue_id, expand=expand, auth=auth)
 
+        async def queue_create(
+            self,
+            *,
+            key: str,
+            name: str,
+            lead: str,
+            default_type: str,
+            default_priority: str,
+            extra: dict[str, Any] | None = None,
+            auth: YandexAuth | None = None,
+        ) -> Queue:
+            return await self._original.queue_create(
+                key=key,
+                name=name,
+                lead=lead,
+                default_type=default_type,
+                default_priority=default_priority,
+                extra=extra,
+                auth=auth,
+            )
+
     class CachingIssuesProtocol(IssueProtocolWrap):
         @cached(**cache_config)
         async def issue_get(
@@ -485,13 +506,15 @@ def make_cached_protocols(
             self,
             issue_id: str,
             *,
-            file_path: str,
+            file_path: str | None = None,
+            content_base64: str | None = None,
             filename: str | None = None,
             auth: YandexAuth | None = None,
         ) -> IssueAttachment:
             return await self._original.issue_upload_attachment(
                 issue_id,
                 file_path=file_path,
+                content_base64=content_base64,
                 filename=filename,
                 auth=auth,
             )
@@ -513,14 +536,16 @@ def make_cached_protocols(
             attachment_id: str,
             filename: str,
             *,
-            dest_path: str,
+            dest_path: str | None = None,
+            return_base64: bool = False,
             auth: YandexAuth | None = None,
-        ) -> str:
+        ) -> dict[str, str]:
             return await self._original.issue_download_attachment(
                 issue_id,
                 attachment_id,
                 filename,
                 dest_path=dest_path,
+                return_base64=return_base64,
                 auth=auth,
             )
 
@@ -757,6 +782,41 @@ def make_cached_protocols(
                 extra=extra,
                 auth=auth,
             )
+
+        async def sprint_update(
+            self,
+            sprint_id: str | int,
+            *,
+            fields: dict[str, Any],
+            auth: YandexAuth | None = None,
+        ) -> Sprint:
+            return await self._original.sprint_update(
+                sprint_id, fields=fields, auth=auth
+            )
+
+        async def sprint_delete(
+            self,
+            sprint_id: str | int,
+            *,
+            auth: YandexAuth | None = None,
+        ) -> None:
+            return await self._original.sprint_delete(sprint_id, auth=auth)
+
+        async def sprint_start(
+            self,
+            sprint_id: str | int,
+            *,
+            auth: YandexAuth | None = None,
+        ) -> Sprint:
+            return await self._original.sprint_start(sprint_id, auth=auth)
+
+        async def sprint_finish(
+            self,
+            sprint_id: str | int,
+            *,
+            auth: YandexAuth | None = None,
+        ) -> Sprint:
+            return await self._original.sprint_finish(sprint_id, auth=auth)
 
     class CachingFiltersProtocol(FiltersProtocolWrap):
         @cached(**cache_config)

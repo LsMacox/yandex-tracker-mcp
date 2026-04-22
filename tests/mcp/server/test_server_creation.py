@@ -98,6 +98,13 @@ WRITE_TOOL_NAMES = [
     "board_column_update",
     "board_column_delete",
     "sprint_create",
+    # Sprint lifecycle (4)
+    "sprint_update",
+    "sprint_delete",
+    "sprint_start",
+    "sprint_finish",
+    # Queue write (1)
+    "queue_create",
     # Filter write (3)
     "filter_create",
     "filter_update",

@@ -100,16 +100,32 @@ def register_issue_read_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
     @mcp.tool(
         title="Find Issues",
         description=(
-            "Find Yandex Tracker issues. Provide either a YQL `query` string OR a structured "
-            "`filter` dict — not both.\n\n"
-            "YQL examples:\n"
-            "  - `Queue: TEST AND Resolution: empty()`\n"
-            '  - `Boards: "My Board"` (note: plural `Boards`, searches by board NAME, not id)\n'
-            '  - To sort in YQL, embed inline: `Queue: TEST \\"Sort By\\": Updated DESC`\n\n'
-            'Structured filter example: `{"queue": "TEST", "assignee": "me()"}` — use with `order`.\n\n'
-            "`order` accepts a list like `['-updated_at', '+priority']` (prefix `-` for DESC, `+` or none "
-            'for ASC). When combined with a YQL `query` it is auto-converted to a `"Sort By"` clause; '
-            "when combined with `filter` it is passed to the API as-is.\n\n"
+            "Find Yandex Tracker issues. Provide either a YQL `query` string OR a "
+            "structured `filter` dict — not both.\n\n"
+            "═══ YQL cheatsheet ═══\n"
+            "Field names are PascalCase and case-sensitive:\n"
+            "  • `Queue: TEST` — by queue key\n"
+            '  • `Boards: "My Board"` — PLURAL, by board NAME (NOT `Board:`, NOT id)\n'
+            "  • `Assignee: me()`, `Author: me()`, `Follower: me()`\n"
+            "  • `Resolution: empty()` — open issues; `Resolution: notEmpty()` — closed\n"
+            "  • `Status: open, inProgress` — OR-list of statuses\n"
+            "  • `Type: bug, incident` — OR-list of issue types\n"
+            "  • `Priority: critical, blocker`\n"
+            "  • `Tags: urgent` / `Components: Core` / `Version: 1.2.0`\n"
+            '  • `Sprint: "Sprint 1"` — by name\n'
+            "  • `Created: > 2024-01-01` / `Updated: today() - 7d`\n"
+            '  • `Summary: ~"keyword"` — contains; `Description: ~"..."`\n'
+            "Combine with `AND`, `OR`, `NOT`; group with parentheses.\n"
+            'Sort INSIDE the query: append `"Sort By": Updated DESC, Key ASC`.\n\n'
+            "═══ `order` parameter ═══\n"
+            "Use `['-updated_at', '+priority']` (prefix `-` DESC, `+`/none ASC).\n"
+            'When combined with `query`, it\'s auto-folded into the `"Sort By"` clause.\n'
+            "With `filter`, it's sent as-is in the body.\n\n"
+            "═══ Standard enum keys ═══\n"
+            "Status: `open, inProgress, needInfo, closed, resolved, reopened`.\n"
+            "Type: `task, bug, feature, improvement, incident, epic`.\n"
+            "Priority: `trivial, minor, normal, critical, blocker`.\n"
+            "Resolution: `fixed, wontFix, cantReproduce, duplicate, later, dontDo`.\n\n"
             "To restrict to specific issue keys use `keys`."
         ),
         annotations=ToolAnnotations(readOnlyHint=True),

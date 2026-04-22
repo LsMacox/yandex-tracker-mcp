@@ -161,27 +161,34 @@ def register_issue_extras_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
     @mcp.tool(
         title="Upload Issue Attachment",
         description=(
-            "Upload a local file as an attachment to the issue. "
-            "`file_path` MUST reference a file on the FILESYSTEM OF THE MCP SERVER "
-            "itself — not on the MCP client machine. Uploading files from a "
-            "remote client environment is not supported; copy the file onto the "
-            "server host first."
+            "Upload a file as an attachment. Pick exactly one source:\n"
+            "  * `file_path` — path on the MCP SERVER's filesystem (not the client!).\n"
+            "  * `content_base64` — base64-encoded bytes; pass with `filename`. "
+            "Use this when the client has no access to the server's FS."
         ),
     )
     async def issue_upload_attachment(
         ctx: Context[Any, AppContext],
         issue_id: IssueID,
         file_path: Annotated[
-            str,
+            str | None,
             Field(
-                description="Absolute or relative path to the file on the MCP server "
-                "host (NOT on the client side)."
+                description="Path to the file on the MCP server host. "
+                "Mutually exclusive with content_base64."
             ),
-        ],
+        ] = None,
+        content_base64: Annotated[
+            str | None,
+            Field(
+                description="File content as a base64 string. Requires `filename`. "
+                "Mutually exclusive with file_path."
+            ),
+        ] = None,
         filename: Annotated[
             str | None,
             Field(
-                description="Override filename shown in Tracker (defaults to basename)"
+                description="Filename to show in Tracker. Required when using "
+                "content_base64; defaults to basename(file_path) otherwise."
             ),
         ] = None,
     ) -> IssueAttachment:
@@ -190,6 +197,7 @@ def register_issue_extras_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
             await ctx.request_context.lifespan_context.issues.issue_upload_attachment(
                 issue_id,
                 file_path=file_path,
+                content_base64=content_base64,
                 filename=filename,
                 auth=get_yandex_auth(ctx),
             )
@@ -213,9 +221,13 @@ def register_issue_extras_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
 
     @mcp.tool(
         title="Download Issue Attachment",
-        description="Download an attachment file and save it locally. "
-        "Returns the final path on disk. dest_path may be a directory "
-        "(saves with original filename) or a full file path.",
+        description=(
+            "Download an attachment. Pass at least one sink:\n"
+            "  * `dest_path` — save to the MCP server's filesystem (directory or full path).\n"
+            "  * `return_base64=True` — return bytes as base64 in the response "
+            "(for clients with no access to the server's FS).\n"
+            "You can combine them. Response: `{path?: str, content_base64?: str}`."
+        ),
         annotations=ToolAnnotations(readOnlyHint=True),
     )
     async def issue_download_attachment(
@@ -224,23 +236,31 @@ def register_issue_extras_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
         attachment_id: Annotated[str, Field(description="Attachment id")],
         filename: Annotated[str, Field(description="Attachment filename in Tracker")],
         dest_path: Annotated[
-            str,
+            str | None,
             Field(
-                description="Destination path (directory or full file path) on this machine"
+                description="Destination path (directory or file) on the MCP server. "
+                "Required if return_base64 is False."
             ),
-        ],
+        ] = None,
+        return_base64: Annotated[
+            bool,
+            Field(
+                description="If True, the downloaded bytes are returned as base64 in "
+                "`content_base64`. Use when the caller can't read server files."
+            ),
+        ] = False,
     ) -> dict[str, str]:
         check_issue_access(settings, issue_id)
-        path = (
+        return (
             await ctx.request_context.lifespan_context.issues.issue_download_attachment(
                 issue_id,
                 attachment_id,
                 filename,
                 dest_path=dest_path,
+                return_base64=return_base64,
                 auth=get_yandex_auth(ctx),
             )
         )
-        return {"path": path}
 
     @mcp.tool(
         title="Add Issue Tags",

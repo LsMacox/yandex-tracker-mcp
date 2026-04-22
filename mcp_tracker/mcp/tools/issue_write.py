@@ -34,11 +34,15 @@ def register_issue_write_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
 
     @mcp.tool(
         title="Execute Issue Transition",
-        description="Execute a status transition for a Yandex Tracker issue. "
-        "IMPORTANT: You MUST first call issue_get_transitions to retrieve available transitions for the issue. "
-        "Only pass a transition_id that was returned by issue_get_transitions. "
-        "Do NOT use arbitrary transition IDs - the API will reject invalid transition IDs. "
-        "Returns a list of new transitions available for the issue in its new status.",
+        description=(
+            "Execute a status transition for a Yandex Tracker issue.\n\n"
+            "Common standard transition ids (most Tracker orgs expose these): "
+            "`inProgressMeta`, `needInfoMeta`, `closedMeta`, `reopenMeta`, `backlogMeta`. "
+            "For anything non-standard call `issue_get_transitions` first.\n\n"
+            "`fields` accepts reference-type values as bare strings (e.g. "
+            '`{"resolution": "wontFix", "assignee": "me"}`) — they are auto-wrapped '
+            "to `{key: value}` before hitting the API."
+        ),
         annotations=ToolAnnotations(readOnlyHint=False),
     )
     async def issue_execute_transition(
@@ -77,15 +81,16 @@ def register_issue_write_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
 
     @mcp.tool(
         title="Close Issue",
-        description="Close a Yandex Tracker issue with a resolution. "
-        "This is a convenience tool that automatically finds a transition to a 'done' status "
-        "and executes it with the specified resolution. "
-        "IMPORTANT: Before closing, you MUST: "
-        "1) Call issue_get to retrieve the issue's type field. "
-        "2) Call queue_get_metadata with expand=['issueTypesConfig'] to get available resolutions. "
-        "3) Choose a resolution from the issueTypesConfig entry matching the issue's type - "
-        "each issue type has its own set of valid resolutions. "
-        "Returns a list of transitions available for the issue in its new (closed) status.",
+        description=(
+            "Close a Yandex Tracker issue with a resolution. The tool finds a "
+            "transition to a `done`-type status and executes it, wrapping the "
+            "resolution as `{key: ...}` automatically.\n\n"
+            "Standard resolution keys (work on most issue types): `fixed`, "
+            "`wontFix`, `cantReproduce`, `duplicate`, `later`, `dontDo`, "
+            "`successful`, `overfulfilled`. If the queue has a custom resolution "
+            "scheme, call `get_resolutions` or `queue_get_metadata` with "
+            "`expand=['issueTypesConfig']` to see queue-specific keys first."
+        ),
         annotations=ToolAnnotations(readOnlyHint=False),
     )
     async def issue_close(
@@ -94,8 +99,8 @@ def register_issue_write_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
         resolution_id: Annotated[
             str,
             Field(
-                description="The resolution ID to set when closing the issue. "
-                "Must be one of the IDs returned by get_resolutions tool (e.g., 'fixed', 'wontFix', 'duplicate')."
+                description="Resolution key. Standard: fixed, wontFix, "
+                "cantReproduce, duplicate, later, dontDo, successful, overfulfilled."
             ),
         ],
         fields: Annotated[
@@ -244,7 +249,9 @@ def register_issue_write_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
             int | None,
             Field(
                 description="Issue version for optimistic locking. "
-                "Changes are only made to the current version of the issue. Always try to receive issue's version using issue_get tool first."
+                "Leave unset — the server fetches the current version via issue_get "
+                "right before the PATCH. Specify only when you want to fail the "
+                "request on concurrent edits (strict optimistic locking)."
             ),
         ] = None,
         fields: Annotated[
@@ -257,8 +264,18 @@ def register_issue_write_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
         ] = None,
     ) -> Issue:
         check_issue_access(settings, issue_id)
+        auth = get_yandex_auth(ctx)
+        issues = ctx.request_context.lifespan_context.issues
 
-        return await ctx.request_context.lifespan_context.issues.issue_update(
+        # Optimistic-lock convenience: if the caller did not provide an explicit
+        # version, fetch the current one so the PATCH does not require an
+        # up-front issue_get round-trip from the client. Callers that need
+        # strict conflict detection pass `version` themselves.
+        if version is None:
+            current = await issues.issue_get(issue_id, auth=auth)
+            version = current.version
+
+        return await issues.issue_update(
             issue_id,
             summary=summary,
             description=description,
@@ -271,7 +288,7 @@ def register_issue_write_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
             project=project,
             tags=tags,
             version=version,
-            auth=get_yandex_auth(ctx),
+            auth=auth,
             **(fields or {}),
         )
 

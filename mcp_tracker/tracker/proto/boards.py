@@ -97,6 +97,35 @@ class BoardsProtocol(Protocol):
         auth: YandexAuth | None = None,
     ) -> Sprint: ...
 
+    async def sprint_update(
+        self,
+        sprint_id: str | int,
+        *,
+        fields: dict[str, Any],
+        auth: YandexAuth | None = None,
+    ) -> Sprint: ...
+
+    async def sprint_delete(
+        self,
+        sprint_id: str | int,
+        *,
+        auth: YandexAuth | None = None,
+    ) -> None: ...
+
+    async def sprint_start(
+        self,
+        sprint_id: str | int,
+        *,
+        auth: YandexAuth | None = None,
+    ) -> Sprint: ...
+
+    async def sprint_finish(
+        self,
+        sprint_id: str | int,
+        *,
+        auth: YandexAuth | None = None,
+    ) -> Sprint: ...
+
 
 class BoardsProtocolWrap(BoardsProtocol):
     def __init__(self, original: BoardsProtocol):

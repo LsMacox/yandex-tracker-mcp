@@ -88,9 +88,10 @@ def register_component_write_tools(settings: Settings, mcp: FastMCP[Any]) -> Non
 
     @mcp.tool(
         title="Update Component",
-        description="Update component fields (PATCH). Pass the current component `version` "
-        "to use optimistic locking (sent as If-Match header). Tracker returns 428 "
-        "Precondition Required when you omit it — fetch via `component_get` first.",
+        description="Update component fields (PATCH). Tracker requires optimistic "
+        "locking (If-Match) for components — the tool auto-fetches the current "
+        "`version` via component_get when you leave it unset. Pass an explicit "
+        "`version` only when you want to fail on concurrent edits.",
     )
     async def component_update(
         ctx: Context[Any, AppContext],
@@ -98,14 +99,24 @@ def register_component_write_tools(settings: Settings, mcp: FastMCP[Any]) -> Non
         fields: Annotated[dict[str, Any], Field(description="Fields to update")],
         version: Annotated[
             str | int | None,
-            Field(description="Current component version for If-Match optimistic lock"),
+            Field(
+                description="Current component version for If-Match. "
+                "Leave unset to let the server fetch it."
+            ),
         ] = None,
     ) -> Component:
-        return await ctx.request_context.lifespan_context.components.component_update(
+        components = ctx.request_context.lifespan_context.components
+        auth = get_yandex_auth(ctx)
+
+        if version is None:
+            current = await components.component_get(component_id, auth=auth)
+            version = current.version
+
+        return await components.component_update(
             component_id,
             fields=fields,
             version=version,
-            auth=get_yandex_auth(ctx),
+            auth=auth,
         )
 
     @mcp.tool(

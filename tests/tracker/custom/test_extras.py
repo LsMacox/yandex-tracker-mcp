@@ -337,9 +337,10 @@ class TestIssueExtras:
                     body=b"hello world",
                     headers={"Content-Type": "application/octet-stream"},
                 )
-                dest = await tracker_client.issue_download_attachment(
+                result = await tracker_client.issue_download_attachment(
                     "TEST-1", "a1", "hello.txt", dest_path=tmp_dir
                 )
+            dest = result["path"]
             assert dest.endswith("hello.txt")
             with open(dest, "rb") as fh:
                 assert fh.read() == b"hello world"
