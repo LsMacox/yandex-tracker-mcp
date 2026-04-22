@@ -227,7 +227,8 @@ class TestIssueExecuteTransition:
 
         capture.assert_called_once()
         body = capture.last_request.get_json_body()
-        assert body["resolution"] == "fixed"
+        # Bare strings for reference-type fields are auto-wrapped to {"key": value}.
+        assert body["resolution"] == {"key": "fixed"}
         assert body["customField"] == "value"
 
     async def test_with_auth(
@@ -306,7 +307,7 @@ class TestIssueClose:
 
         execute_capture.assert_called_once()
         body = execute_capture.last_request.get_json_body()
-        assert body["resolution"] == "fixed"
+        assert body["resolution"] == {"key": "fixed"}
 
     async def test_success_with_comment(
         self,
@@ -343,7 +344,7 @@ class TestIssueClose:
         execute_capture.assert_called_once()
         body = execute_capture.last_request.get_json_body()
         assert body["comment"] == "Closing this issue"
-        assert body["resolution"] == "fixed"
+        assert body["resolution"] == {"key": "fixed"}
 
     async def test_success_with_fields(
         self,
@@ -379,7 +380,7 @@ class TestIssueClose:
 
         execute_capture.assert_called_once()
         body = execute_capture.last_request.get_json_body()
-        assert body["resolution"] == "fixed"
+        assert body["resolution"] == {"key": "fixed"}
         assert body["customField"] == "value"
 
     async def test_no_done_transition_raises_error(

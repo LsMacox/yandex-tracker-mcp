@@ -875,20 +875,51 @@ class TrackerClient(
             response.raise_for_status()
             return IssueTransitionList.model_validate_json(await response.read()).root
 
+    # Fields that expect `{"key": value}` reference objects in Tracker API;
+    # we auto-wrap plain strings to save callers from a frequent 422.
+    _REFERENCE_FIELD_KEYS: frozenset[str] = frozenset(
+        {
+            "resolution",
+            "priority",
+            "type",
+            "status",
+            "queue",
+            "assignee",
+            "project",
+            "parent",
+            "epic",
+        }
+    )
+
+    @classmethod
+    def _normalize_transition_fields(
+        cls, fields: dict[str, Any] | None
+    ) -> dict[str, Any]:
+        """Wrap bare string values for reference-type fields into ``{"key": value}``."""
+        if not fields:
+            return {}
+        normalized: dict[str, Any] = {}
+        for key, value in fields.items():
+            if key in cls._REFERENCE_FIELD_KEYS and isinstance(value, str) and value:
+                normalized[key] = {"key": value}
+            else:
+                normalized[key] = value
+        return normalized
+
     async def issue_execute_transition(
         self,
         issue_id: str,
         transition_id: str,
         *,
         comment: str | None = None,
-        fields: dict[str, str | int | list[str]] | None = None,
+        fields: dict[str, Any] | None = None,
         auth: YandexAuth | None = None,
     ) -> list[IssueTransition]:
         body: dict[str, Any] = {}
         if comment is not None:
             body["comment"] = comment
         if fields is not None:
-            body.update(fields)
+            body.update(self._normalize_transition_fields(fields))
 
         async with self._session.post(
             f"v3/issues/{issue_id}/transitions/{transition_id}/_execute",
@@ -897,7 +928,8 @@ class TrackerClient(
         ) as response:
             if response.status == 404:
                 raise IssueNotFound(issue_id)
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return IssueTransitionList.model_validate_json(await response.read()).root
 
     async def issue_close(
@@ -906,7 +938,7 @@ class TrackerClient(
         resolution_id: str,
         *,
         comment: str | None = None,
-        fields: dict[str, str | int | list[str]] | None = None,
+        fields: dict[str, Any] | None = None,
         auth: YandexAuth | None = None,
     ) -> list[IssueTransition]:
         # Fetch transitions and statuses in parallel
@@ -942,7 +974,9 @@ class TrackerClient(
         if fields is None:
             fields = {}
 
-        fields["resolution"] = resolution_id
+        # Tracker expects reference objects here, not raw strings.
+        # issue_execute_transition would wrap it too, but being explicit is cheaper to read.
+        fields["resolution"] = {"key": resolution_id}
 
         return await self.issue_execute_transition(
             issue_id,
@@ -1494,7 +1528,13 @@ class TrackerClient(
         extra: dict[str, Any] | None = None,
         auth: YandexAuth | None = None,
     ) -> Sprint:
-        body: dict[str, Any] = {"name": name}
+        # Yandex Tracker creates sprints via POST /v2/sprints with the target
+        # board referenced in the body — not via /v3/boards/<id>/sprints
+        # (which is read-only and returns 405 on POST).
+        body: dict[str, Any] = {
+            "name": name,
+            "board": {"id": board_id},
+        }
         if start_date is not None:
             body["startDate"] = start_date
         if end_date is not None:
@@ -1508,11 +1548,12 @@ class TrackerClient(
                 body.setdefault(k, v)
 
         async with self._session.post(
-            f"v3/boards/{board_id}/sprints",
+            "v2/sprints",
             headers=await self._build_headers(auth),
             json=body,
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return Sprint.model_validate_json(await response.read())
 
     # --- filters ---
@@ -1850,13 +1891,17 @@ class TrackerClient(
         page: int = 1,
         auth: YandexAuth | None = None,
     ) -> list[Dashboard]:
+        # Yandex Tracker searches dashboards via POST /v3/dashboards/_search.
+        # A plain GET /v3/dashboards returns 405.
         params = {"perPage": per_page, "page": page}
-        async with self._session.get(
-            "v3/dashboards",
+        async with self._session.post(
+            "v3/dashboards/_search",
             headers=await self._build_headers(auth),
+            json={},
             params=params,
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return DashboardList.model_validate_json(await response.read()).root
 
     async def dashboard_get(
@@ -1866,18 +1911,28 @@ class TrackerClient(
             f"v3/dashboards/{dashboard_id}",
             headers=await self._build_headers(auth),
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return Dashboard.model_validate_json(await response.read())
 
     async def dashboard_get_widgets(
         self, dashboard_id: str, *, auth: YandexAuth | None = None
     ) -> list[DashboardWidget]:
+        # Tracker has no dedicated /widgets endpoint — widgets are embedded
+        # in the dashboard body. We fetch the dashboard and extract them.
         async with self._session.get(
-            f"v3/dashboards/{dashboard_id}/widgets",
+            f"v3/dashboards/{dashboard_id}",
             headers=await self._build_headers(auth),
         ) as response:
-            response.raise_for_status()
-            return DashboardWidgetList.model_validate_json(await response.read()).root
+            if response.status >= 400:
+                await _raise_tracker_error(response)
+            raw = await response.read()
+
+        import json as _json
+
+        data = _json.loads(raw)
+        widgets_data = data.get("widgets") or []
+        return [DashboardWidget.model_validate(w) for w in widgets_data]
 
     async def dashboard_create(
         self,
@@ -1895,7 +1950,8 @@ class TrackerClient(
             headers=await self._build_headers(auth),
             json=body,
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return Dashboard.model_validate_json(await response.read())
 
     async def dashboard_update(
@@ -1903,14 +1959,19 @@ class TrackerClient(
         dashboard_id: str,
         *,
         fields: dict[str, Any],
+        version: str | int | None = None,
         auth: YandexAuth | None = None,
     ) -> Dashboard:
+        headers = await self._build_headers(auth)
+        if version is not None:
+            headers["If-Match"] = f'"{version}"'
         async with self._session.patch(
             f"v3/dashboards/{dashboard_id}",
-            headers=await self._build_headers(auth),
+            headers=headers,
             json=fields,
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return Dashboard.model_validate_json(await response.read())
 
     async def dashboard_delete(

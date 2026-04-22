@@ -133,7 +133,7 @@ class IssueProtocol(Protocol):
         transition_id: str,
         *,
         comment: str | None = None,
-        fields: dict[str, str | int | list[str]] | None = None,
+        fields: dict[str, Any] | None = None,
         auth: YandexAuth | None = None,
     ) -> list[IssueTransition]: ...
 
@@ -143,7 +143,7 @@ class IssueProtocol(Protocol):
         resolution_id: str,
         *,
         comment: str | None = None,
-        fields: dict[str, str | int | list[str]] | None = None,
+        fields: dict[str, Any] | None = None,
         auth: YandexAuth | None = None,
     ) -> list[IssueTransition]: ...
 

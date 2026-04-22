@@ -100,8 +100,8 @@ class TestEntities:
 class TestDashboards:
     async def test_dashboards_list(self, tracker_client: TrackerClient) -> None:
         with aioresponses() as m:
-            m.get(
-                "https://api.tracker.yandex.net/v3/dashboards?perPage=50&page=1",
+            m.post(
+                "https://api.tracker.yandex.net/v3/dashboards/_search?perPage=50&page=1",
                 payload=[{"id": "d1", "name": "Home"}],
             )
             result = await tracker_client.dashboards_list()
@@ -111,8 +111,12 @@ class TestDashboards:
     async def test_dashboard_widgets(self, tracker_client: TrackerClient) -> None:
         with aioresponses() as m:
             m.get(
-                "https://api.tracker.yandex.net/v3/dashboards/d1/widgets",
-                payload=[{"id": "w1", "type": "issueList"}],
+                "https://api.tracker.yandex.net/v3/dashboards/d1",
+                payload={
+                    "id": "d1",
+                    "name": "Home",
+                    "widgets": [{"id": "w1", "type": "issueList"}],
+                },
             )
             result = await tracker_client.dashboard_get_widgets("d1")
         assert len(result) == 1
@@ -342,7 +346,7 @@ class TestBoardsWrite:
     async def test_sprint_create(self, tracker_client: TrackerClient) -> None:
         with aioresponses() as m:
             m.post(
-                "https://api.tracker.yandex.net/v3/boards/7/sprints",
+                "https://api.tracker.yandex.net/v2/sprints",
                 payload={"id": 55, "name": "Sprint A", "status": "draft"},
             )
             result = await tracker_client.sprint_create(7, name="Sprint A")
@@ -485,6 +489,137 @@ class TestRegressions:
             )
             with pytest.raises(TrackerAPIError):
                 await tracker_client.issues_count("Board: 9")
+
+
+class TestTransitionReferenceWrapping:
+    """Regressions for 0.7.2: bare strings for reference fields got 422."""
+
+    async def test_issue_execute_transition_wraps_resolution_string(
+        self, tracker_client: TrackerClient
+    ) -> None:
+        captured_body: dict[str, Any] = {}
+
+        def callback(url: Any, **kwargs: Any) -> Any:
+            from aioresponses.core import CallbackResult
+
+            captured_body.update(kwargs.get("json") or {})
+            return CallbackResult(status=200, body="[]")
+
+        with aioresponses() as m:
+            m.post(
+                "https://api.tracker.yandex.net/v3/issues/TEST-1/transitions/close/_execute",
+                callback=callback,
+            )
+            await tracker_client.issue_execute_transition(
+                "TEST-1", "close", fields={"resolution": "wontFix"}
+            )
+
+        assert captured_body["resolution"] == {"key": "wontFix"}
+
+    async def test_issue_execute_transition_keeps_dict_resolution(
+        self, tracker_client: TrackerClient
+    ) -> None:
+        """Already-wrapped values must pass through unchanged."""
+        captured_body: dict[str, Any] = {}
+
+        def callback(url: Any, **kwargs: Any) -> Any:
+            from aioresponses.core import CallbackResult
+
+            captured_body.update(kwargs.get("json") or {})
+            return CallbackResult(status=200, body="[]")
+
+        with aioresponses() as m:
+            m.post(
+                "https://api.tracker.yandex.net/v3/issues/TEST-1/transitions/close/_execute",
+                callback=callback,
+            )
+            await tracker_client.issue_execute_transition(
+                "TEST-1",
+                "close",
+                fields={"resolution": {"key": "fixed", "display": "Fixed"}},
+            )
+
+        assert captured_body["resolution"] == {"key": "fixed", "display": "Fixed"}
+
+    async def test_issue_execute_transition_does_not_wrap_nonreference_fields(
+        self, tracker_client: TrackerClient
+    ) -> None:
+        captured_body: dict[str, Any] = {}
+
+        def callback(url: Any, **kwargs: Any) -> Any:
+            from aioresponses.core import CallbackResult
+
+            captured_body.update(kwargs.get("json") or {})
+            return CallbackResult(status=200, body="[]")
+
+        with aioresponses() as m:
+            m.post(
+                "https://api.tracker.yandex.net/v3/issues/TEST-1/transitions/close/_execute",
+                callback=callback,
+            )
+            await tracker_client.issue_execute_transition(
+                "TEST-1", "close", fields={"customField": "value", "tags": ["a", "b"]}
+            )
+
+        # Non-reference fields passed through unchanged.
+        assert captured_body["customField"] == "value"
+        assert captured_body["tags"] == ["a", "b"]
+
+
+class TestSprintCreateEndpoint:
+    async def test_uses_v2_sprints_endpoint_with_board_in_body(
+        self, tracker_client: TrackerClient
+    ) -> None:
+        captured_body: dict[str, Any] = {}
+
+        def callback(url: Any, **kwargs: Any) -> Any:
+            from aioresponses.core import CallbackResult
+
+            captured_body.update(kwargs.get("json") or {})
+            return CallbackResult(
+                status=200,
+                body='{"id": 77, "name": "Sprint", "status": "draft"}',
+            )
+
+        with aioresponses() as m:
+            m.post(
+                "https://api.tracker.yandex.net/v2/sprints",
+                callback=callback,
+            )
+            result = await tracker_client.sprint_create(
+                13,
+                name="Sprint",
+                start_date="2026-01-01",
+                end_date="2026-01-14",
+            )
+
+        assert isinstance(result, Sprint)
+        assert captured_body["board"] == {"id": 13}
+        assert captured_body["name"] == "Sprint"
+        assert captured_body["startDate"] == "2026-01-01"
+        assert captured_body["endDate"] == "2026-01-14"
+
+
+class TestDashboardUpdateVersion:
+    async def test_sends_if_match_header(self, tracker_client: TrackerClient) -> None:
+        captured_headers: dict[str, Any] = {}
+
+        def callback(url: Any, **kwargs: Any) -> Any:
+            from aioresponses.core import CallbackResult
+
+            captured_headers.update(kwargs.get("headers") or {})
+            return CallbackResult(status=200, body='{"id": "d1", "name": "Renamed"}')
+
+        with aioresponses() as m:
+            m.patch(
+                "https://api.tracker.yandex.net/v3/dashboards/d1",
+                callback=callback,
+            )
+            await tracker_client.dashboard_update(
+                "d1", fields={"name": "Renamed"}, version=5
+            )
+
+        assert captured_headers.get("If-Match") == '"5"'
 
 
 class TestOrderToYqlSortBy:

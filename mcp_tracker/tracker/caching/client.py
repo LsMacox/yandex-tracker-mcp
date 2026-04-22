@@ -331,7 +331,7 @@ def make_cached_protocols(
             transition_id: str,
             *,
             comment: str | None = None,
-            fields: dict[str, str | int | list[str]] | None = None,
+            fields: dict[str, Any] | None = None,
             auth: YandexAuth | None = None,
         ) -> list[IssueTransition]:
             return await self._original.issue_execute_transition(
@@ -348,7 +348,7 @@ def make_cached_protocols(
             resolution_id: str,
             *,
             comment: str | None = None,
-            fields: dict[str, str | int | list[str]] | None = None,
+            fields: dict[str, Any] | None = None,
             auth: YandexAuth | None = None,
         ) -> list[IssueTransition]:
             return await self._original.issue_close(
@@ -1036,10 +1036,11 @@ def make_cached_protocols(
             dashboard_id: str,
             *,
             fields: dict[str, Any],
+            version: str | int | None = None,
             auth: YandexAuth | None = None,
         ) -> Dashboard:
             return await self._original.dashboard_update(
-                dashboard_id, fields=fields, auth=auth
+                dashboard_id, fields=fields, version=version, auth=auth
             )
 
         async def dashboard_delete(

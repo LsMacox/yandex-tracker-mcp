@@ -77,15 +77,23 @@ def register_dashboard_write_tools(_settings: Settings, mcp: FastMCP[Any]) -> No
 
     @mcp.tool(
         title="Update Dashboard",
-        description="Update dashboard (PATCH).",
+        description="Update dashboard (PATCH). Pass the current dashboard `version` "
+        "to use optimistic locking (sent as If-Match header) — Tracker often requires it.",
     )
     async def dashboard_update(
         ctx: Context[Any, AppContext],
         dashboard_id: DashboardID,
         fields: Annotated[dict[str, Any], Field(description="Fields to update")],
+        version: Annotated[
+            str | int | None,
+            Field(description="Current dashboard version for If-Match optimistic lock"),
+        ] = None,
     ) -> Dashboard:
         return await ctx.request_context.lifespan_context.dashboards.dashboard_update(
-            dashboard_id, fields=fields, auth=get_yandex_auth(ctx)
+            dashboard_id,
+            fields=fields,
+            version=version,
+            auth=get_yandex_auth(ctx),
         )
 
     @mcp.tool(

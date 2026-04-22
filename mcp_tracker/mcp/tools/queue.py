@@ -88,18 +88,23 @@ def register_queue_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
 
     @mcp.tool(
         title="Get Queue Tags",
-        description="Get all tags for a specific Yandex Tracker queue",
+        description="Get all tags for a specific Yandex Tracker queue. "
+        "Returns a `{'tags': [...]}` object.",
         annotations=ToolAnnotations(readOnlyHint=True),
     )
     async def queue_get_tags(
         ctx: Context[Any, AppContext],
         queue_id: QueueID,
-    ) -> list[str]:
+    ) -> dict[str, list[str]]:
         check_queue_access(settings, queue_id)
-        return await ctx.request_context.lifespan_context.queues.queues_get_tags(
+        tags = await ctx.request_context.lifespan_context.queues.queues_get_tags(
             queue_id,
             auth=get_yandex_auth(ctx),
         )
+        # Wrap in an object so MCP clients receive a single JSON text block
+        # instead of rendering each tag as a separate content item (which some
+        # clients concatenate without separators, making the list unreadable).
+        return {"tags": list(tags)}
 
     @mcp.tool(
         title="Get Queue Versions",

@@ -77,8 +77,9 @@ class TestQueueGetTags:
         assert not result.isError
         mock_queues_protocol.queues_get_tags.assert_called_once()
         content = get_tool_result_content(result)
-        assert isinstance(content, list)
-        assert content == sample_queue_tags
+        # Tool now wraps tags in a dict so MCP clients serialize as one JSON block.
+        assert isinstance(content, dict)
+        assert content == {"tags": sample_queue_tags}
 
     async def test_restricted_queue_raises_error(
         self,

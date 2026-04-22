@@ -232,6 +232,7 @@ class DashboardsProtocol(Protocol):
         dashboard_id: str,
         *,
         fields: dict[str, Any],
+        version: str | int | None = None,
         auth: YandexAuth | None = None,
     ) -> Dashboard: ...
 
