@@ -11,19 +11,8 @@ from mcp_tracker.mcp.tools.automation import (
 from mcp_tracker.mcp.tools.board import register_board_tools
 from mcp_tracker.mcp.tools.board_write import register_board_write_tools
 from mcp_tracker.mcp.tools.bulkchange import register_bulkchange_tools
-from mcp_tracker.mcp.tools.component import (
-    register_component_tools,
-    register_component_write_tools,
-)
-from mcp_tracker.mcp.tools.dashboard import (
-    register_dashboard_tools,
-    register_dashboard_write_tools,
-)
+from mcp_tracker.mcp.tools.crud import register_crud_tools
 from mcp_tracker.mcp.tools.field import register_field_tools
-from mcp_tracker.mcp.tools.filter import (
-    register_filter_tools,
-    register_filter_write_tools,
-)
 from mcp_tracker.mcp.tools.issue_extras import register_issue_extras_tools
 from mcp_tracker.mcp.tools.issue_parts import register_issue_parts_tools
 from mcp_tracker.mcp.tools.issue_read import register_issue_read_tools
@@ -46,13 +35,11 @@ def register_all_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
     register_issue_read_tools(settings, mcp)
     register_user_tools(settings, mcp)
     register_board_tools(settings, mcp)
-    register_filter_tools(settings, mcp)
-    register_component_tools(settings, mcp)
     register_project_tools(settings, mcp)
-    register_dashboard_tools(settings, mcp)
     register_automation_tools(settings, mcp)
-    # Consolidated issue CRUD families (read+write in one tool, gated internally)
+    # Consolidated tools (read+write in one tool, gated internally by read-only mode)
     register_issue_parts_tools(settings, mcp)
+    register_crud_tools(settings, mcp)
 
     # Write tools — only in non read-only mode
     if not settings.tracker_read_only:
@@ -60,10 +47,7 @@ def register_all_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
         register_issue_extras_tools(settings, mcp)
         register_board_write_tools(settings, mcp)
         register_queue_write_tools(settings, mcp)
-        register_filter_write_tools(settings, mcp)
-        register_component_write_tools(settings, mcp)
         register_project_write_tools(settings, mcp)
-        register_dashboard_write_tools(settings, mcp)
         register_automation_write_tools(settings, mcp)
         register_bulkchange_tools(settings, mcp)
 

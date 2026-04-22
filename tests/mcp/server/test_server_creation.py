@@ -29,28 +29,22 @@ READ_ONLY_TOOL_NAMES = [
     "users_search",
     "user_get",
     "user_get_current",
-    # Board tools (5)
+    # Board tools (4)
     "boards_get_all",
     "board_get",
     "board_get_columns",
     "board_get_sprints",
-    "sprint_get",
-    # Filter tools (2)
-    "filters_list",
-    "filter_get",
-    # Component tools (2)
-    "components_list",
-    "component_get",
+    # Consolidated CRUD (components/filters/dashboards/sprints) — write gated internally (4)
+    "components",
+    "filters",
+    "dashboards",
+    "sprints",
     # Project/entities tools (5)
     "projects_search",
     "portfolios_search",
     "goals_search",
     "entity_get",
     "projects_legacy_list",
-    # Dashboard tools (3)
-    "dashboards_list",
-    "dashboard_get",
-    "dashboard_get_widgets",
     # Automation read tools (8)
     "triggers_list",
     "trigger_get",
@@ -70,37 +64,19 @@ WRITE_TOOL_NAMES = [
     "issue_create",
     "issue_update",
     "issue_move_to_queue",
-    # Board write (7)
+    # Board write (6)
     "board_create",
     "board_update",
     "board_delete",
     "board_column_create",
     "board_column_update",
     "board_column_delete",
-    "sprint_create",
-    # Sprint lifecycle (4)
-    "sprint_update",
-    "sprint_delete",
-    "sprint_start",
-    "sprint_finish",
     # Queue write (1)
     "queue_create",
-    # Filter write (3)
-    "filter_create",
-    "filter_update",
-    "filter_delete",
-    # Component write (3)
-    "component_create",
-    "component_update",
-    "component_delete",
     # Entity write (3)
     "entity_create",
     "entity_update",
     "entity_delete",
-    # Dashboard write (3)
-    "dashboard_create",
-    "dashboard_update",
-    "dashboard_delete",
     # Automation write (9)
     "trigger_create",
     "trigger_update",

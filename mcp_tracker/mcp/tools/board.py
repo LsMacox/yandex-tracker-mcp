@@ -22,11 +22,6 @@ BoardID = Annotated[
     Field(description="Numeric Yandex Tracker board identifier, e.g. 42"),
 ]
 
-SprintID = Annotated[
-    str,
-    Field(description="Sprint identifier (string numeric id from board sprints list)"),
-]
-
 
 def register_board_tools(_settings: Settings, mcp: FastMCP[Any]) -> None:
     """Register board/sprint read-only tools."""
@@ -93,18 +88,3 @@ def register_board_tools(_settings: Settings, mcp: FastMCP[Any]) -> None:
             auth=get_yandex_auth(ctx),
         )
         return {"sprints": items}
-
-    @mcp.tool(
-        title="Get Sprint",
-        description="Get parameters of a specific sprint by its identifier "
-        "(obtain the id from board_get_sprints).",
-        annotations=ToolAnnotations(readOnlyHint=True),
-    )
-    async def sprint_get(
-        ctx: Context[Any, AppContext, Request],
-        sprint_id: SprintID,
-    ) -> Sprint:
-        return await ctx.request_context.lifespan_context.boards.sprint_get(
-            sprint_id,
-            auth=get_yandex_auth(ctx),
-        )

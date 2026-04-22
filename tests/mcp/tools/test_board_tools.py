@@ -141,21 +141,3 @@ class TestBoardGetSprints:
         items = content["sprints"]
         assert len(items) == 2
         assert items[0]["status"] == "in_progress"
-
-
-class TestSprintGet:
-    async def test_returns_sprint(
-        self,
-        client_session: ClientSession,
-        mock_boards_protocol: AsyncMock,
-        sample_sprint: Sprint,
-    ) -> None:
-        mock_boards_protocol.sprint_get.return_value = sample_sprint
-
-        result = await client_session.call_tool("sprint_get", {"sprint_id": "44"})
-
-        assert not result.isError
-        assert mock_boards_protocol.sprint_get.call_args.args[0] == "44"
-        content = get_tool_result_content(result)
-        assert content["id"] == 44
-        assert content["name"] == "Sprint 1"
