@@ -1200,12 +1200,13 @@ class TrackerClient(
         auth: YandexAuth | None = None,
     ) -> IssueAttachment:
         filename = filename or os.path.basename(file_path)
+        # Read into memory so we don't leak the file handle on Windows
+        # (where open handles block subsequent unlink) and avoid aiohttp
+        # holding the fd for the lifetime of the form.
+        with open(file_path, "rb") as fh:
+            file_bytes = fh.read()
         form = FormData()
-        form.add_field(
-            "file",
-            open(file_path, "rb"),  # noqa: SIM115
-            filename=filename,
-        )
+        form.add_field("file", file_bytes, filename=filename)
         async with self._session.post(
             f"v3/issues/{issue_id}/attachments",
             headers=await self._build_headers(auth),
@@ -1213,7 +1214,8 @@ class TrackerClient(
         ) as response:
             if response.status == 404:
                 raise IssueNotFound(issue_id)
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return IssueAttachment.model_validate_json(await response.read())
 
     async def issue_delete_attachment(
