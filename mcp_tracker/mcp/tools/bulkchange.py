@@ -1,109 +1,141 @@
-"""Bulk change MCP tools."""
+"""Consolidated bulk tool (update/move/transition/status)."""
 
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from mcp.server import FastMCP
 from mcp.server.fastmcp import Context
-from mcp.types import ToolAnnotations
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from mcp_tracker.mcp.context import AppContext
 from mcp_tracker.mcp.params import IssueIDs, QueueID
+from mcp_tracker.mcp.tools._access import require_write_mode
 from mcp_tracker.mcp.utils import get_yandex_auth
 from mcp_tracker.settings import Settings
-from mcp_tracker.tracker.proto.types.misc import BulkChangeResult
+
+BulkAction = Literal["update", "move", "transition", "status"]
 
 
-def register_bulkchange_tools(_settings: Settings, mcp: FastMCP[Any]) -> None:
+def _dump(value: Any) -> Any:
+    if isinstance(value, BaseModel):
+        return value.model_dump(mode="json", by_alias=True)
+    if isinstance(value, list):
+        return [_dump(v) for v in value]
+    return value
+
+
+def register_bulkchange_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
     @mcp.tool(
-        title="Bulk Update Issues",
-        description="Apply a single set of field values to many issues at once. "
-        "Returns an operation descriptor; poll with bulk_status_get to see progress.",
+        title="Bulk",
+        description=(
+            "Run or inspect long-running bulk operations on issues.\n\n"
+            "Actions:\n"
+            "- `update` — apply one `values` dict to many `issues`; "
+            "optional `comment`, `notify`\n"
+            "- `move` — move many `issues` to another `queue`; "
+            "optional `move_all_fields`, `initial_status`, `notify`, `extra`\n"
+            "- `transition` — execute the same `transition` across many `issues`; "
+            "optional `comment`, `resolution`, `fields`\n"
+            "- `status` — poll progress of a previously started operation; "
+            "requires `operation_id`\n\n"
+            "Write actions return an operation descriptor; use `status` to track."
+        ),
     )
-    async def bulk_update(
+    async def bulk(
         ctx: Context[Any, AppContext],
-        issues: IssueIDs,
+        action: BulkAction,
+        issues: Annotated[
+            IssueIDs | None,
+            Field(description="Issue keys (update/move/transition)"),
+        ] = None,
         values: Annotated[
-            dict[str, Any],
-            Field(
-                description="Field values to set on every issue (same shape as issue_update body)"
-            ),
-        ],
-        comment: Annotated[str | None, Field(description="Comment to add")] = None,
-        notify: Annotated[bool | None, Field(description="Send notifications")] = None,
-    ) -> BulkChangeResult:
-        return await ctx.request_context.lifespan_context.bulkchange.bulk_update(
-            issues=issues,
-            values=values,
-            comment=comment,
-            notify=notify,
-            auth=get_yandex_auth(ctx),
-        )
-
-    @mcp.tool(
-        title="Bulk Move Issues",
-        description="Move many issues to another queue in a single bulk operation.",
-    )
-    async def bulk_move(
-        ctx: Context[Any, AppContext],
-        issues: IssueIDs,
-        queue: QueueID,
+            dict[str, Any] | None,
+            Field(description="Fields to set (update)"),
+        ] = None,
+        queue: Annotated[
+            QueueID | None, Field(description="Target queue key (move)")
+        ] = None,
+        transition: Annotated[
+            str | None, Field(description="Transition id (transition)")
+        ] = None,
+        resolution: Annotated[
+            str | None, Field(description="Resolution for done-type transitions")
+        ] = None,
+        comment: Annotated[
+            str | None, Field(description="Comment to add (update/transition)")
+        ] = None,
+        notify: Annotated[
+            bool | None, Field(description="Send notifications (update/move)")
+        ] = None,
         move_all_fields: Annotated[
-            bool | None, Field(description="Preserve all fields during move")
+            bool | None, Field(description="Preserve fields during move")
         ] = None,
         initial_status: Annotated[
-            bool | None, Field(description="Use initial status of target queue")
-        ] = None,
-        notify: Annotated[bool | None, Field(description="Send notifications")] = None,
-        extra: Annotated[
-            dict[str, Any] | None, Field(description="Additional body fields")
-        ] = None,
-    ) -> BulkChangeResult:
-        return await ctx.request_context.lifespan_context.bulkchange.bulk_move(
-            issues=issues,
-            queue=queue,
-            move_all_fields=move_all_fields,
-            initial_status=initial_status,
-            notify=notify,
-            extra=extra,
-            auth=get_yandex_auth(ctx),
-        )
-
-    @mcp.tool(
-        title="Bulk Transition Issues",
-        description="Execute the same status transition across many issues.",
-    )
-    async def bulk_transition(
-        ctx: Context[Any, AppContext],
-        issues: IssueIDs,
-        transition: Annotated[str, Field(description="Transition id to execute")],
-        comment: Annotated[str | None, Field(description="Comment to add")] = None,
-        resolution: Annotated[
-            str | None, Field(description="Resolution for 'done' transitions")
+            bool | None, Field(description="Use target queue initial status (move)")
         ] = None,
         fields: Annotated[
-            dict[str, Any] | None,
-            Field(description="Extra field values required by the transition"),
+            dict[str, Any] | None, Field(description="Extra transition fields")
         ] = None,
-    ) -> BulkChangeResult:
-        return await ctx.request_context.lifespan_context.bulkchange.bulk_transition(
-            issues=issues,
-            transition=transition,
-            comment=comment,
-            resolution=resolution,
-            fields=fields,
-            auth=get_yandex_auth(ctx),
-        )
+        extra: Annotated[
+            dict[str, Any] | None, Field(description="Extra body fields (move)")
+        ] = None,
+        operation_id: Annotated[
+            str | None, Field(description="Bulk operation id (status)")
+        ] = None,
+    ) -> dict[str, Any]:
+        bulkchange = ctx.request_context.lifespan_context.bulkchange
+        auth = get_yandex_auth(ctx)
 
-    @mcp.tool(
-        title="Get Bulk Operation Status",
-        description="Get progress of a bulk operation started by bulk_update/_move/_transition.",
-        annotations=ToolAnnotations(readOnlyHint=True),
-    )
-    async def bulk_status_get(
-        ctx: Context[Any, AppContext],
-        operation_id: Annotated[str, Field(description="Bulk operation id")],
-    ) -> BulkChangeResult:
-        return await ctx.request_context.lifespan_context.bulkchange.bulk_status_get(
-            operation_id, auth=get_yandex_auth(ctx)
-        )
+        if action == "status":
+            if operation_id is None:
+                raise ValueError("`operation_id` is required for action `status`.")
+            item = await bulkchange.bulk_status_get(operation_id, auth=auth)
+            return {"operation": _dump(item)}
+
+        require_write_mode(settings, action)
+
+        if action == "update":
+            if issues is None:
+                raise ValueError("`issues` is required for action `update`.")
+            if values is None:
+                raise ValueError("`values` is required for action `update`.")
+            item = await bulkchange.bulk_update(
+                issues=issues,
+                values=values,
+                comment=comment,
+                notify=notify,
+                auth=auth,
+            )
+            return {"operation": _dump(item)}
+
+        if action == "move":
+            if issues is None:
+                raise ValueError("`issues` is required for action `move`.")
+            if queue is None:
+                raise ValueError("`queue` is required for action `move`.")
+            item = await bulkchange.bulk_move(
+                issues=issues,
+                queue=queue,
+                move_all_fields=move_all_fields,
+                initial_status=initial_status,
+                notify=notify,
+                extra=extra,
+                auth=auth,
+            )
+            return {"operation": _dump(item)}
+
+        if action == "transition":
+            if issues is None:
+                raise ValueError("`issues` is required for action `transition`.")
+            if transition is None:
+                raise ValueError("`transition` is required for action `transition`.")
+            item = await bulkchange.bulk_transition(
+                issues=issues,
+                transition=transition,
+                comment=comment,
+                resolution=resolution,
+                fields=fields,
+                auth=auth,
+            )
+            return {"operation": _dump(item)}
+
+        raise ValueError(f"Unknown action: {action}")

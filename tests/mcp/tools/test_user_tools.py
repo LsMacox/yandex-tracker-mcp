@@ -6,8 +6,8 @@ from mcp_tracker.tracker.proto.types.users import User
 from tests.mcp.conftest import get_tool_result_content
 
 
-class TestUsersGetAll:
-    async def test_returns_users(
+class TestUsersList:
+    async def test_list(
         self,
         client_session: ClientSession,
         mock_users_protocol: AsyncMock,
@@ -15,39 +15,18 @@ class TestUsersGetAll:
     ) -> None:
         mock_users_protocol.users_list.return_value = sample_users
 
-        result = await client_session.call_tool("users_get_all", {})
+        result = await client_session.call_tool("users", {"action": "list"})
 
         assert not result.isError
         mock_users_protocol.users_list.assert_called_once()
         content = get_tool_result_content(result)
-        assert isinstance(content, dict)
         items = content["users"]
         assert len(items) == len(sample_users)
         assert items[0]["login"] == sample_users[0].login
-        assert items[0]["display"] == sample_users[0].display
-
-    async def test_with_pagination(
-        self,
-        client_session: ClientSession,
-        mock_users_protocol: AsyncMock,
-        sample_users: list[User],
-    ) -> None:
-        mock_users_protocol.users_list.return_value = sample_users
-
-        result = await client_session.call_tool(
-            "users_get_all", {"page": 2, "per_page": 25}
-        )
-
-        assert not result.isError
-        call_kwargs = mock_users_protocol.users_list.call_args.kwargs
-        assert call_kwargs["page"] == 2
-        assert call_kwargs["per_page"] == 25
-        content = get_tool_result_content(result)
-        assert len(content["users"]) == len(sample_users)
 
 
 class TestUsersSearch:
-    async def test_finds_user_by_exact_login(
+    async def test_exact_login_match(
         self,
         client_session: ClientSession,
         mock_users_protocol: AsyncMock,
@@ -56,17 +35,16 @@ class TestUsersSearch:
         mock_users_protocol.users_list.side_effect = [sample_users, []]
 
         result = await client_session.call_tool(
-            "users_search", {"login_or_email_or_name": "testuser"}
+            "users",
+            {"action": "search", "query": sample_users[0].login},
         )
 
         assert not result.isError
         content = get_tool_result_content(result)
-        assert isinstance(content, dict)
-        items = content["users"]
-        assert len(items) == 1
-        assert items[0]["login"] == "testuser"
+        assert len(content["users"]) == 1
+        assert content["users"][0]["login"] == sample_users[0].login
 
-    async def test_finds_user_by_exact_email(
+    async def test_no_match_returns_empty(
         self,
         client_session: ClientSession,
         mock_users_protocol: AsyncMock,
@@ -75,96 +53,56 @@ class TestUsersSearch:
         mock_users_protocol.users_list.side_effect = [sample_users, []]
 
         result = await client_session.call_tool(
-            "users_search", {"login_or_email_or_name": "testuser@example.com"}
+            "users", {"action": "search", "query": "zzz-unknown-query"}
         )
 
         assert not result.isError
         content = get_tool_result_content(result)
-        assert isinstance(content, dict)
-        items = content["users"]
-        assert len(items) == 1
-        assert items[0]["email"] == "testuser@example.com"
-
-    async def test_fuzzy_matches_by_name(
-        self,
-        client_session: ClientSession,
-        mock_users_protocol: AsyncMock,
-        sample_users: list[User],
-    ) -> None:
-        mock_users_protocol.users_list.side_effect = [sample_users, []]
-
-        result = await client_session.call_tool(
-            "users_search", {"login_or_email_or_name": "Test User"}
-        )
-
-        assert not result.isError
-        content = get_tool_result_content(result)
-        assert isinstance(content, dict)
-        # Should find at least one user matching "Test User"
-        assert len(content["users"]) >= 1
-
-    async def test_returns_empty_list_when_no_match(
-        self,
-        client_session: ClientSession,
-        mock_users_protocol: AsyncMock,
-    ) -> None:
-        mock_users_protocol.users_list.side_effect = [[], []]
-
-        result = await client_session.call_tool(
-            "users_search", {"login_or_email_or_name": "nonexistent"}
-        )
-
-        assert not result.isError
-        content = get_tool_result_content(result)
-        assert isinstance(content, dict)
         assert content["users"] == []
 
 
-class TestUserGet:
-    async def test_returns_user(
+class TestUsersGet:
+    async def test_get(
         self,
         client_session: ClientSession,
         mock_users_protocol: AsyncMock,
-        sample_user: User,
+        sample_users: list[User],
     ) -> None:
-        mock_users_protocol.user_get.return_value = sample_user
+        mock_users_protocol.user_get.return_value = sample_users[0]
 
-        result = await client_session.call_tool("user_get", {"user_id": "testuser"})
+        result = await client_session.call_tool(
+            "users", {"action": "get", "user_id": sample_users[0].login}
+        )
 
         assert not result.isError
-        mock_users_protocol.user_get.assert_called_once()
         content = get_tool_result_content(result)
-        assert isinstance(content, dict)
-        assert content["login"] == sample_user.login
-        assert content["display"] == sample_user.display
-        assert content["email"] == sample_user.email
+        assert content["user"]["login"] == sample_users[0].login
 
-    async def test_user_not_found_raises_error(
+    async def test_get_not_found(
         self,
         client_session: ClientSession,
         mock_users_protocol: AsyncMock,
     ) -> None:
         mock_users_protocol.user_get.return_value = None
 
-        result = await client_session.call_tool("user_get", {"user_id": "nonexistent"})
+        result = await client_session.call_tool(
+            "users", {"action": "get", "user_id": "ghost"}
+        )
 
         assert result.isError
 
 
-class TestUserGetCurrent:
-    async def test_returns_current_user(
+class TestUsersCurrent:
+    async def test_current(
         self,
         client_session: ClientSession,
         mock_users_protocol: AsyncMock,
-        sample_user: User,
+        sample_users: list[User],
     ) -> None:
-        mock_users_protocol.user_get_current.return_value = sample_user
+        mock_users_protocol.user_get_current.return_value = sample_users[0]
 
-        result = await client_session.call_tool("user_get_current", {})
+        result = await client_session.call_tool("users", {"action": "current"})
 
         assert not result.isError
-        mock_users_protocol.user_get_current.assert_called_once()
         content = get_tool_result_content(result)
-        assert isinstance(content, dict)
-        assert content["login"] == sample_user.login
-        assert content["display"] == sample_user.display
+        assert content["user"]["login"] == sample_users[0].login

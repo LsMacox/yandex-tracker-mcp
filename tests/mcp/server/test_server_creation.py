@@ -3,12 +3,6 @@ from mcp.client.session import ClientSession
 
 # Read-only tool names — always registered
 READ_ONLY_TOOL_NAMES = [
-    # Queue tools (5)
-    "queues_get_all",
-    "queue_get_tags",
-    "queue_get_versions",
-    "queue_get_fields",
-    "queue_get_metadata",
     # Field tools (2)
     "tracker_reference",
     "issue_get_url",
@@ -24,20 +18,21 @@ READ_ONLY_TOOL_NAMES = [
     "issue_attachments",
     "issue_checklist",
     "issue_tags",
-    # User tools (4)
-    "users_get_all",
-    "users_search",
-    "user_get",
-    "user_get_current",
-    # Consolidated CRUD (read+write, gated internally) — 4
+    # Consolidated queues (read+write, gated internally) — 1
+    "queues",
+    # Consolidated users — 1
+    "users",
+    # Consolidated bulk (read+write, gated internally) — 1
+    "bulk",
+    # Consolidated CRUD (components/filters/dashboards/sprints) — 4
     "components",
     "filters",
     "dashboards",
     "sprints",
-    # Consolidated boards + columns (read+write, gated internally) — 2
+    # Consolidated boards + columns — 2
     "boards",
     "board_columns",
-    # Consolidated automations (read+write, gated internally) — 4
+    # Consolidated automations — 4
     "triggers",
     "autoactions",
     "macros",
@@ -58,17 +53,10 @@ WRITE_TOOL_NAMES = [
     "issue_create",
     "issue_update",
     "issue_move_to_queue",
-    # Queue write (1)
-    "queue_create",
     # Entity write (3)
     "entity_create",
     "entity_update",
     "entity_delete",
-    # Bulk change (4)
-    "bulk_update",
-    "bulk_move",
-    "bulk_transition",
-    "bulk_status_get",
 ]
 
 # All tool names that should be registered in normal mode
