@@ -16,3 +16,11 @@ def check_queue_access(settings: Settings, queue_id: str) -> None:
     """Check if access to the queue is allowed based on queue restrictions."""
     if settings.tracker_limit_queues and queue_id not in settings.tracker_limit_queues:
         raise TrackerError(f"Queue `{queue_id}` not found or not allowed.")
+
+
+def require_write_mode(settings: Settings, action: str) -> None:
+    """Reject write-style actions on a consolidated tool when the server runs read-only."""
+    if settings.tracker_read_only:
+        raise TrackerError(
+            f"Action `{action}` is not allowed — server is running in read-only mode."
+        )

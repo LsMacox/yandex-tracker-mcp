@@ -25,6 +25,7 @@ from mcp_tracker.mcp.tools.filter import (
     register_filter_write_tools,
 )
 from mcp_tracker.mcp.tools.issue_extras import register_issue_extras_tools
+from mcp_tracker.mcp.tools.issue_parts import register_issue_parts_tools
 from mcp_tracker.mcp.tools.issue_read import register_issue_read_tools
 from mcp_tracker.mcp.tools.issue_write import register_issue_write_tools
 from mcp_tracker.mcp.tools.project import (
@@ -50,6 +51,8 @@ def register_all_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
     register_project_tools(settings, mcp)
     register_dashboard_tools(settings, mcp)
     register_automation_tools(settings, mcp)
+    # Consolidated issue CRUD families (read+write in one tool, gated internally)
+    register_issue_parts_tools(settings, mcp)
 
     # Write tools — only in non read-only mode
     if not settings.tracker_read_only:

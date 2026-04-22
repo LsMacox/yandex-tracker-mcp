@@ -12,16 +12,18 @@ READ_ONLY_TOOL_NAMES = [
     # Field tools (2)
     "tracker_reference",
     "issue_get_url",
-    # Issue read tools (9)
+    # Issue read tools (4)
     "issue_get",
-    "issue_get_comments",
-    "issue_get_links",
     "issues_find",
     "issues_count",
-    "issue_get_worklogs",
-    "issue_get_attachments",
-    "issue_get_checklist",
     "issue_get_transitions",
+    # Consolidated issue CRUD — always registered; write-actions gated by read-only mode (6)
+    "issue_comments",
+    "issue_links",
+    "issue_worklogs",
+    "issue_attachments",
+    "issue_checklist",
+    "issue_tags",
     # User tools (4)
     "users_get_all",
     "users_search",
@@ -62,29 +64,11 @@ READ_ONLY_TOOL_NAMES = [
 
 # Write tool names — only registered when not in read-only mode
 WRITE_TOOL_NAMES = [
-    # Existing issue write (10)
+    # Issue write (5)
     "issue_execute_transition",
     "issue_close",
     "issue_create",
     "issue_update",
-    "issue_add_worklog",
-    "issue_update_worklog",
-    "issue_delete_worklog",
-    "issue_add_comment",
-    "issue_update_comment",
-    "issue_delete_comment",
-    # Issue extras (11)
-    "issue_add_link",
-    "issue_delete_link",
-    "issue_add_checklist_item",
-    "issue_update_checklist_item",
-    "issue_delete_checklist_item",
-    "issue_clear_checklist",
-    "issue_upload_attachment",
-    "issue_delete_attachment",
-    "issue_download_attachment",
-    "issue_add_tags",
-    "issue_remove_tags",
     "issue_move_to_queue",
     # Board write (7)
     "board_create",

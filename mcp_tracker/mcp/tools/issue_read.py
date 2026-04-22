@@ -10,7 +10,6 @@ from pydantic import Field
 from mcp_tracker.mcp.context import AppContext
 from mcp_tracker.mcp.params import (
     IssueID,
-    IssueIDs,
     PageParam,
     PerPageParam,
     YTQuery,
@@ -19,14 +18,9 @@ from mcp_tracker.mcp.tools._access import check_issue_access
 from mcp_tracker.mcp.utils import get_yandex_auth, set_non_needed_fields_null
 from mcp_tracker.settings import Settings
 from mcp_tracker.tracker.proto.types.issues import (
-    ChecklistItem,
     Issue,
-    IssueAttachment,
-    IssueComment,
     IssueFieldsEnum,
-    IssueLink,
     IssueTransition,
-    Worklog,
 )
 
 
@@ -60,42 +54,6 @@ def register_issue_read_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
             issue.description = None
 
         return issue
-
-    @mcp.tool(
-        title="Get Issue Comments",
-        description="Get comments of a Yandex Tracker issue by its id. "
-        "Returns a `{'comments': [...]}` object.",
-        annotations=ToolAnnotations(readOnlyHint=True),
-    )
-    async def issue_get_comments(
-        ctx: Context[Any, AppContext],
-        issue_id: IssueID,
-    ) -> dict[str, list[IssueComment]]:
-        check_issue_access(settings, issue_id)
-
-        items = await ctx.request_context.lifespan_context.issues.issue_get_comments(
-            issue_id,
-            auth=get_yandex_auth(ctx),
-        )
-        return {"comments": items}
-
-    @mcp.tool(
-        title="Get Issue Links",
-        description="Get a Yandex Tracker issue related links to other issues by its id. "
-        "Returns a `{'links': [...]}` object.",
-        annotations=ToolAnnotations(readOnlyHint=True),
-    )
-    async def issue_get_links(
-        ctx: Context[Any, AppContext],
-        issue_id: IssueID,
-    ) -> dict[str, list[IssueLink]]:
-        check_issue_access(settings, issue_id)
-
-        items = await ctx.request_context.lifespan_context.issues.issues_get_links(
-            issue_id,
-            auth=get_yandex_auth(ctx),
-        )
-        return {"links": items}
 
     @mcp.tool(
         title="Find Issues",
@@ -211,66 +169,6 @@ def register_issue_read_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
             query,
             auth=get_yandex_auth(ctx),
         )
-
-    @mcp.tool(
-        title="Get Issue Worklogs",
-        description="Get worklogs of a Yandex Tracker issue by its id",
-        annotations=ToolAnnotations(readOnlyHint=True),
-    )
-    async def issue_get_worklogs(
-        ctx: Context[Any, AppContext],
-        issue_ids: IssueIDs,
-    ) -> dict[str, list[Worklog]]:
-        for issue_id in issue_ids:
-            check_issue_access(settings, issue_id)
-
-        result: dict[str, list[Worklog]] = {}
-        for issue_id in issue_ids:
-            worklogs = (
-                await ctx.request_context.lifespan_context.issues.issue_get_worklogs(
-                    issue_id,
-                    auth=get_yandex_auth(ctx),
-                )
-            )
-            result[issue_id] = worklogs or []
-
-        return result
-
-    @mcp.tool(
-        title="Get Issue Attachments",
-        description="Get attachments of a Yandex Tracker issue by its id. "
-        "Returns a `{'attachments': [...]}` object.",
-        annotations=ToolAnnotations(readOnlyHint=True),
-    )
-    async def issue_get_attachments(
-        ctx: Context[Any, AppContext],
-        issue_id: IssueID,
-    ) -> dict[str, list[IssueAttachment]]:
-        check_issue_access(settings, issue_id)
-
-        items = await ctx.request_context.lifespan_context.issues.issue_get_attachments(
-            issue_id,
-            auth=get_yandex_auth(ctx),
-        )
-        return {"attachments": items}
-
-    @mcp.tool(
-        title="Get Issue Checklist",
-        description="Get checklist items of a Yandex Tracker issue by its id. "
-        "Returns a `{'checklist': [...]}` object.",
-        annotations=ToolAnnotations(readOnlyHint=True),
-    )
-    async def issue_get_checklist(
-        ctx: Context[Any, AppContext],
-        issue_id: IssueID,
-    ) -> dict[str, list[ChecklistItem]]:
-        check_issue_access(settings, issue_id)
-
-        items = await ctx.request_context.lifespan_context.issues.issue_get_checklist(
-            issue_id,
-            auth=get_yandex_auth(ctx),
-        )
-        return {"checklist": items}
 
     @mcp.tool(
         title="Get Issue Transitions",
