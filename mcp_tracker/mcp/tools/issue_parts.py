@@ -252,8 +252,10 @@ def register_issue_parts_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
             "Read, upload, download or delete attachments.\n\n"
             "Actions:\n"
             "- `get` → `{attachments: [...]}`\n"
-            "- `upload` → `{attachment: {...}}` — provide EITHER `file_path` (server FS) "
-            "OR `content_base64` + `filename`\n"
+            "- `upload` → `{attachment: {...}}` — provide EXACTLY ONE source: "
+            "`file_path` (server FS), `content_base64` + `filename`, or "
+            "`source_url` (HTTPS, host must be in "
+            "TRACKER_ATTACHMENT_URL_ALLOWED_DOMAINS; redirects not followed)\n"
             "- `download` → `{path?: str, content_base64?: str}` — requires `attachment_id` "
             "and `filename`; use `dest_path` and/or `return_base64=True`\n"
             "- `delete` → `{ok: true}` — requires `attachment_id`"
@@ -269,7 +271,8 @@ def register_issue_parts_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
         filename: Annotated[
             str | None,
             Field(
-                description="Upload: label in Tracker (required with content_base64). "
+                description="Upload: label in Tracker (required with content_base64; "
+                "derived from URL path for source_url). "
                 "Download: server-side attachment filename."
             ),
         ] = None,
@@ -280,6 +283,13 @@ def register_issue_parts_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
         content_base64: Annotated[
             str | None,
             Field(description="Base64 file bytes (upload)."),
+        ] = None,
+        source_url: Annotated[
+            str | None,
+            Field(
+                description="HTTPS URL to fetch (upload). Host must be in the "
+                "operator-configured allowlist; off by default."
+            ),
         ] = None,
         dest_path: Annotated[
             str | None,
@@ -312,11 +322,43 @@ def register_issue_parts_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
         require_write_mode(settings, action)
 
         if action == "upload":
+            # Exactly one source must be given.
+            sources = [s for s in (file_path, content_base64, source_url) if s]
+            if len(sources) != 1:
+                raise ValueError(
+                    "Provide exactly one of `file_path`, `content_base64`, or "
+                    "`source_url` for upload."
+                )
+
+            effective_b64 = content_base64
+            effective_filename = filename
+
+            if source_url is not None:
+                from mcp_tracker.mcp.url_fetch import (
+                    UrlFetchError,
+                    fetch_attachment,
+                )
+
+                try:
+                    data, suggested = await fetch_attachment(
+                        source_url,
+                        allowed_domains=settings.tracker_attachment_url_allowed_domains,
+                        max_bytes=settings.tracker_attachment_url_max_bytes,
+                        timeout_seconds=settings.tracker_attachment_url_timeout_seconds,
+                    )
+                except UrlFetchError as e:
+                    raise ValueError(f"Cannot fetch source_url: {e}") from e
+
+                import base64 as _base64
+
+                effective_b64 = _base64.b64encode(data).decode("ascii")
+                effective_filename = filename or suggested or "attachment"
+
             attachment = await issues.issue_upload_attachment(
                 issue_id,
                 file_path=file_path,
-                content_base64=content_base64,
-                filename=filename,
+                content_base64=effective_b64,
+                filename=effective_filename,
                 auth=auth,
             )
             return {"attachment": _dump(attachment)}

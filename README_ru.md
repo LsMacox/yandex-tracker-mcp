@@ -875,6 +875,15 @@ TRACKER_API_BASE_URL=https://api.tracker.yandex.net  # По умолчанию: 
 # Безопасность - Ограничить доступ к конкретным очередям (опционально)
 TRACKER_LIMIT_QUEUES=PROJ1,PROJ2,DEV      # Ключи очередей через запятую
 
+# Настройка ответа задачи (опционально)
+TRACKER_HIDE_ISSUE_FIELDS=favorite,qaEngineer  # По умолчанию: favorite,qaEngineer. Пустая строка — оставить всё.
+
+# Загрузка вложений по URL (опционально, выключено по умолчанию)
+# Включает `issue_attachments(action="upload", source_url="https://...")`
+TRACKER_ATTACHMENT_URL_ALLOWED_DOMAINS=files.example.com,*.cdn.example.com  # Обязательно для включения
+TRACKER_ATTACHMENT_URL_MAX_BYTES=52428800          # По умолчанию: 50 МиБ
+TRACKER_ATTACHMENT_URL_TIMEOUT_SECONDS=30          # По умолчанию: 30с
+
 # Конфигурация сервера
 HOST=0.0.0.0                              # По умолчанию: 0.0.0.0
 PORT=8000                                 # По умолчанию: 8000

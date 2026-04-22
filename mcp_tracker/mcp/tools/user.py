@@ -50,7 +50,7 @@ def register_user_tools(_settings: Settings, mcp: FastMCP[Any]) -> None:
             str | None, Field(description="login/email/name to search (search)")
         ] = None,
         page: PageParam = 1,
-        per_page: PerPageParam = 50,
+        per_page: PerPageParam = 25,
     ) -> dict[str, Any]:
         users_proto = ctx.request_context.lifespan_context.users
         auth = get_yandex_auth(ctx)

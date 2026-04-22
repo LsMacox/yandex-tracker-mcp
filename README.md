@@ -878,6 +878,15 @@ TRACKER_API_BASE_URL=https://api.tracker.yandex.net  # Default: https://api.trac
 # Security - Restrict access to specific queues (optional)
 TRACKER_LIMIT_QUEUES=PROJ1,PROJ2,DEV      # Comma-separated queue keys
 
+# Issue-response tuning (optional)
+TRACKER_HIDE_ISSUE_FIELDS=favorite,qaEngineer  # Default: favorite,qaEngineer. Empty string = keep everything.
+
+# Remote-URL attachment uploads (optional, disabled by default)
+# Enables `issue_attachments(action="upload", source_url="https://...")`
+TRACKER_ATTACHMENT_URL_ALLOWED_DOMAINS=files.example.com,*.cdn.example.com  # Required to enable
+TRACKER_ATTACHMENT_URL_MAX_BYTES=52428800          # Default: 50 MiB
+TRACKER_ATTACHMENT_URL_TIMEOUT_SECONDS=30          # Default: 30s
+
 # Server Configuration
 HOST=0.0.0.0                              # Default: 0.0.0.0
 PORT=8000                                 # Default: 8000

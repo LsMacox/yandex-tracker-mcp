@@ -89,7 +89,7 @@ def register_crud_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
             dict[str, Any] | None, Field(description="Extra body fields (create)")
         ] = None,
         page: PageParam = 1,
-        per_page: PerPageParam = 50,
+        per_page: PerPageParam = 25,
     ) -> dict[str, Any]:
         components_proto = ctx.request_context.lifespan_context.components
         auth = get_yandex_auth(ctx)
@@ -238,7 +238,7 @@ def register_crud_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
             Field(description="Version for If-Match (update)"),
         ] = None,
         page: PageParam = 1,
-        per_page: PerPageParam = 50,
+        per_page: PerPageParam = 25,
     ) -> dict[str, Any]:
         dashboards_proto = ctx.request_context.lifespan_context.dashboards
         auth = get_yandex_auth(ctx)

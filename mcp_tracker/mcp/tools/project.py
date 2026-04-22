@@ -38,7 +38,7 @@ def register_project_tools(_settings: Settings, mcp: FastMCP[Any]) -> None:
             list[str] | None, Field(description="Sort keys, '-' prefix for DESC")
         ] = None,
         page: PageParam = 1,
-        per_page: PerPageParam = 50,
+        per_page: PerPageParam = 25,
     ) -> dict[str, list[Project]]:
         items = await ctx.request_context.lifespan_context.entities.projects_search(
             filter=filter,
@@ -60,7 +60,7 @@ def register_project_tools(_settings: Settings, mcp: FastMCP[Any]) -> None:
         filter: Annotated[dict[str, Any] | None, Field(description="Filter")] = None,
         order: Annotated[list[str] | None, Field(description="Sort")] = None,
         page: PageParam = 1,
-        per_page: PerPageParam = 50,
+        per_page: PerPageParam = 25,
     ) -> dict[str, list[Portfolio]]:
         items = await ctx.request_context.lifespan_context.entities.portfolios_search(
             filter=filter,
@@ -82,7 +82,7 @@ def register_project_tools(_settings: Settings, mcp: FastMCP[Any]) -> None:
         filter: Annotated[dict[str, Any] | None, Field(description="Filter")] = None,
         order: Annotated[list[str] | None, Field(description="Sort")] = None,
         page: PageParam = 1,
-        per_page: PerPageParam = 50,
+        per_page: PerPageParam = 25,
     ) -> dict[str, list[Goal]]:
         items = await ctx.request_context.lifespan_context.entities.goals_search(
             filter=filter,
@@ -125,7 +125,7 @@ def register_project_tools(_settings: Settings, mcp: FastMCP[Any]) -> None:
     async def projects_legacy_list(
         ctx: Context[Any, AppContext],
         page: PageParam = 1,
-        per_page: PerPageParam = 50,
+        per_page: PerPageParam = 25,
     ) -> dict[str, list[ProjectLegacy]]:
         items = (
             await ctx.request_context.lifespan_context.entities.projects_legacy_list(

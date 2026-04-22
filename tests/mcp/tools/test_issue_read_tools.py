@@ -124,6 +124,31 @@ class TestIssuesFind:
             assert issue.get("description") is None
 
 
+class TestIssueGetHidesNoisyFields:
+    async def test_favorite_stripped_by_default(
+        self,
+        client_session: ClientSession,
+        mock_issues_protocol: AsyncMock,
+        sample_issue: Issue,
+    ) -> None:
+        # Simulate Tracker API returning `favorite` via extra=allow.
+        sample_issue.__pydantic_extra__ = {
+            "favorite": False,
+            "qaEngineer": None,
+            "customField": "keep-me",
+        }
+        mock_issues_protocol.issue_get.return_value = sample_issue
+
+        result = await client_session.call_tool("issue_get", {"issue_id": "TEST-1"})
+
+        assert not result.isError
+        content = get_tool_result_content(result)
+        assert "favorite" not in content
+        assert "qaEngineer" not in content
+        # Custom fields stay.
+        assert content.get("customField") == "keep-me"
+
+
 class TestIssuesFindFilterToYql:
     async def test_filter_dict_converted_to_yql(
         self,

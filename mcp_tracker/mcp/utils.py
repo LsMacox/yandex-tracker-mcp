@@ -37,3 +37,16 @@ def set_non_needed_fields_null(data: Iterable[T], needed_fields: set[str]) -> No
         for field in item.model_fields_set:
             if field not in needed_fields:
                 setattr(item, field, None)
+
+
+def strip_extra_fields(item: BaseModel, keys: Iterable[str]) -> None:
+    """Remove `model_extra` keys (declared via extra='allow') from a Pydantic model.
+
+    Used to drop noisy/org-specific fields like `favorite` / `qaEngineer` that
+    Tracker returns on every issue and that bloat LLM context for no gain.
+    """
+    extra = item.__pydantic_extra__
+    if not extra:
+        return
+    for key in keys:
+        extra.pop(key, None)

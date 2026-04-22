@@ -73,7 +73,7 @@ def register_queue_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
             int | None,
             Field(description="Page number; None = fetch all (list action)"),
         ] = None,
-        per_page: PerPageParam = 100,
+        per_page: PerPageParam = 25,
         include_local_fields: Annotated[
             bool,
             Field(description="Include queue-local fields (fields action)"),

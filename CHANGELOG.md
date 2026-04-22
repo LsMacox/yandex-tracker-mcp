@@ -42,6 +42,21 @@ Renamed / merged (old → new):
   (`queue` → `Queue`, `board` → `Boards` plural, etc.), auto-quoting of values
   with spaces, and pass-through for custom/local field ids. `query` and
   `filter` can now be combined — they're joined with AND.
+- **`source_url` on `issue_attachments(action="upload")`.** Upload by URL without
+  downloading the file to the MCP client first. SSRF-safe: HTTPS only, host
+  must be in the operator-configured allowlist (`TRACKER_ATTACHMENT_URL_ALLOWED_DOMAINS`),
+  redirects are not followed, response size and timeout are capped
+  (`TRACKER_ATTACHMENT_URL_MAX_BYTES` / `TRACKER_ATTACHMENT_URL_TIMEOUT_SECONDS`).
+  Disabled when no allowlist is set.
+- **Noisy issue fields are stripped by default.** `issue_get` and `issues_find`
+  drop `favorite` / `qaEngineer` from responses (they're always present in
+  Tracker API output but bloat LLM context). Configurable via
+  `TRACKER_HIDE_ISSUE_FIELDS` (comma-separated; empty string to keep everything).
+
+### Defaults
+- Lowered `per_page` default from 50/100 → **25** across all paginated tools
+  (`queues`, `users`, `components`, `dashboards`, `issues_find`, entity search).
+  Reduces context pressure for LLM clients that iterate pages.
 
 ### Internal
 - Added `require_write_mode()` helper in `_access.py` for internal read-only gating

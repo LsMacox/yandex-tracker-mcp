@@ -15,7 +15,11 @@ from mcp_tracker.mcp.params import (
     YTQuery,
 )
 from mcp_tracker.mcp.tools._access import check_issue_access
-from mcp_tracker.mcp.utils import get_yandex_auth, set_non_needed_fields_null
+from mcp_tracker.mcp.utils import (
+    get_yandex_auth,
+    set_non_needed_fields_null,
+    strip_extra_fields,
+)
 from mcp_tracker.mcp.yql import FilterConversionError, filter_to_yql
 from mcp_tracker.settings import Settings
 from mcp_tracker.tracker.proto.types.issues import (
@@ -53,6 +57,9 @@ def register_issue_read_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
 
         if not include_description:
             issue.description = None
+
+        if settings.tracker_hide_issue_fields:
+            strip_extra_fields(issue, settings.tracker_hide_issue_fields)
 
         return issue
 
@@ -137,7 +144,7 @@ def register_issue_read_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
             ),
         ] = None,
         page: PageParam = 1,
-        per_page: PerPageParam = 100,
+        per_page: PerPageParam = 25,
     ) -> dict[str, list[Issue]]:
         if query is None and filter is None and not keys:
             raise ValueError(
@@ -173,6 +180,10 @@ def register_issue_read_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
 
         if fields is not None:
             set_non_needed_fields_null(issues, {f.name for f in fields})
+
+        if settings.tracker_hide_issue_fields:
+            for issue in issues:
+                strip_extra_fields(issue, settings.tracker_hide_issue_fields)
 
         return {"issues": issues}
 

@@ -363,6 +363,40 @@ class TestIssueAttachments:
         content = get_tool_result_content(result)
         assert content == {"ok": True}
 
+    async def test_upload_source_url_disabled_by_default(
+        self,
+        client_session: ClientSession,
+        mock_issues_protocol: AsyncMock,
+    ) -> None:
+        # No allowlist configured in the default test session → source_url rejected.
+        result = await client_session.call_tool(
+            "issue_attachments",
+            {
+                "action": "upload",
+                "issue_id": "TEST-1",
+                "source_url": "https://files.example.com/f.pdf",
+            },
+        )
+        assert result.isError
+        mock_issues_protocol.issue_upload_attachment.assert_not_called()
+
+    async def test_upload_requires_exactly_one_source(
+        self,
+        client_session: ClientSession,
+        mock_issues_protocol: AsyncMock,
+    ) -> None:
+        result = await client_session.call_tool(
+            "issue_attachments",
+            {
+                "action": "upload",
+                "issue_id": "TEST-1",
+                "file_path": "/tmp/x",
+                "content_base64": "aGVsbG8=",
+            },
+        )
+        assert result.isError
+        mock_issues_protocol.issue_upload_attachment.assert_not_called()
+
 
 # ─── issue_checklist ────────────────────────────────────────────────
 

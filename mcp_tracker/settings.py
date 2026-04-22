@@ -23,6 +23,22 @@ class Settings(BaseSettings):
     tracker_org_id: str | None = None
     tracker_limit_queues: Annotated[list[str] | None, NoDecode] = None
     tracker_read_only: bool = False
+    # Fields to strip from issue responses before sending to the client. These
+    # are typically noisy / org-specific (favorite, qaEngineer, ...) — the Tracker
+    # API always returns them, but most LLM workflows don't care. Override with
+    # an empty string to keep them.
+    tracker_hide_issue_fields: Annotated[list[str] | None, NoDecode] = [
+        "favorite",
+        "qaEngineer",
+    ]
+    # Comma-separated host allowlist for `issue_attachments(action="upload",
+    # source_url=...)`. Leave unset to disable the feature entirely (SSRF-safe
+    # default). Supports exact hosts (`files.example.com`) or suffix wildcards
+    # (`*.example.com`). HTTPS-only; redirects are not followed.
+    tracker_attachment_url_allowed_domains: Annotated[list[str] | None, NoDecode] = None
+    # Safety caps for remote-URL attachment downloads.
+    tracker_attachment_url_max_bytes: int = 50 * 1024 * 1024  # 50 MiB
+    tracker_attachment_url_timeout_seconds: float = 30.0
 
     tracker_sa_key_id: str | None = None
     tracker_sa_service_account_id: str | None = None
@@ -92,6 +108,33 @@ class Settings(BaseSettings):
             raise TypeError(f"Expected str, list or None, got {type(v)}")
 
         return [x.strip() for x in v.split(",") if x.strip()]
+
+    @field_validator("tracker_hide_issue_fields", mode="before")
+    @classmethod
+    def decode_hide_fields(cls, v: Any) -> list[str] | None:
+        if v is None:
+            return None
+        if isinstance(v, list):
+            return v
+        if isinstance(v, str):
+            # Empty string = opt-out (keep everything).
+            if not v.strip():
+                return []
+            return [x.strip() for x in v.split(",") if x.strip()]
+        raise TypeError(f"Expected str, list or None, got {type(v)}")
+
+    @field_validator("tracker_attachment_url_allowed_domains", mode="before")
+    @classmethod
+    def decode_allowed_domains(cls, v: Any) -> list[str] | None:
+        if v is None:
+            return None
+        if isinstance(v, list):
+            return v
+        if isinstance(v, str):
+            if not v.strip():
+                return None
+            return [x.strip() for x in v.split(",") if x.strip()]
+        raise TypeError(f"Expected str, list or None, got {type(v)}")
 
     def cache_kwargs(self) -> dict[str, Any]:
         return {
