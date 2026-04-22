@@ -7,7 +7,8 @@ from typing import Any
 import pytest
 from aioresponses import aioresponses
 
-from mcp_tracker.tracker.custom.client import TrackerClient
+from mcp_tracker.tracker.custom.client import TrackerClient, _order_to_yql_sort_by
+from mcp_tracker.tracker.custom.errors import TrackerAPIError
 from mcp_tracker.tracker.proto.types.boards import Board, BoardColumn, Sprint
 from mcp_tracker.tracker.proto.types.issues import (
     ChecklistItem,
@@ -347,3 +348,160 @@ class TestBoardsWrite:
             result = await tracker_client.sprint_create(7, name="Sprint A")
         assert isinstance(result, Sprint)
         assert result.id == 55
+
+
+class TestRegressions:
+    """Regressions fixed in 0.7.1 after MCP user report."""
+
+    async def test_board_get_sprints_returns_empty_on_400(
+        self, tracker_client: TrackerClient
+    ) -> None:
+        """Boards without a sprint setup respond 400 — we should translate that to []."""
+        with aioresponses() as m:
+            m.get(
+                "https://api.tracker.yandex.net/v3/boards/9/sprints",
+                status=400,
+                payload={"errorMessages": ["board has no sprints"]},
+            )
+            result = await tracker_client.board_get_sprints(9)
+        assert result == []
+
+    async def test_board_get_sprints_returns_empty_on_404(
+        self, tracker_client: TrackerClient
+    ) -> None:
+        with aioresponses() as m:
+            m.get(
+                "https://api.tracker.yandex.net/v3/boards/9/sprints",
+                status=404,
+                payload={"errorMessages": ["not found"]},
+            )
+            result = await tracker_client.board_get_sprints(9)
+        assert result == []
+
+    async def test_issues_find_converts_order_to_yql_sort_by(
+        self, tracker_client: TrackerClient
+    ) -> None:
+        """`order` alongside YQL `query` must be folded into a Sort By clause."""
+        captured_body: dict[str, Any] = {}
+
+        def callback(url: Any, **kwargs: Any) -> Any:
+            from aioresponses.core import CallbackResult
+
+            captured_body.update(kwargs.get("json") or {})
+            return CallbackResult(status=200, body="[]")
+
+        with aioresponses() as m:
+            m.post(
+                "https://api.tracker.yandex.net/v3/issues/_search?perPage=15&page=1",
+                callback=callback,
+            )
+            await tracker_client.issues_find(
+                "Queue: TEST", order=["-updated_at", "+priority"]
+            )
+
+        assert "order" not in captured_body
+        assert captured_body["query"] == (
+            'Queue: TEST "Sort By": Updated DESC, Priority ASC'
+        )
+
+    async def test_issues_find_leaves_existing_sort_by_alone(
+        self, tracker_client: TrackerClient
+    ) -> None:
+        captured_body: dict[str, Any] = {}
+
+        def callback(url: Any, **kwargs: Any) -> Any:
+            from aioresponses.core import CallbackResult
+
+            captured_body.update(kwargs.get("json") or {})
+            return CallbackResult(status=200, body="[]")
+
+        with aioresponses() as m:
+            m.post(
+                "https://api.tracker.yandex.net/v3/issues/_search?perPage=15&page=1",
+                callback=callback,
+            )
+            await tracker_client.issues_find(
+                'Queue: TEST "Sort By": Key ASC', order=["-updated_at"]
+            )
+
+        # Existing Sort By preserved, not duplicated
+        assert captured_body["query"] == 'Queue: TEST "Sort By": Key ASC'
+
+    async def test_issues_find_passes_order_with_filter(
+        self, tracker_client: TrackerClient
+    ) -> None:
+        """With structured `filter`, order goes in the body as-is."""
+        captured_body: dict[str, Any] = {}
+
+        def callback(url: Any, **kwargs: Any) -> Any:
+            from aioresponses.core import CallbackResult
+
+            captured_body.update(kwargs.get("json") or {})
+            return CallbackResult(status=200, body="[]")
+
+        with aioresponses() as m:
+            m.post(
+                "https://api.tracker.yandex.net/v3/issues/_search?perPage=15&page=1",
+                callback=callback,
+            )
+            await tracker_client.issues_find(
+                filter={"queue": "TEST"}, order=["-updated_at"]
+            )
+
+        assert captured_body["filter"] == {"queue": "TEST"}
+        assert captured_body["order"] == ["-updated_at"]
+        assert "query" not in captured_body
+
+    async def test_issues_find_surfaces_tracker_error_body(
+        self, tracker_client: TrackerClient
+    ) -> None:
+        """4xx should raise TrackerAPIError with parsed errorMessages."""
+        with aioresponses() as m:
+            m.post(
+                "https://api.tracker.yandex.net/v3/issues/_search?perPage=15&page=1",
+                status=422,
+                payload={
+                    "errorMessages": ["unknown field: Board"],
+                    "errors": {"query": "invalid YQL"},
+                },
+            )
+            with pytest.raises(TrackerAPIError) as exc_info:
+                await tracker_client.issues_find("Board: 9")
+
+        err = exc_info.value
+        assert err.status == 422
+        assert "unknown field: Board" in err.error_messages
+        assert err.errors == {"query": "invalid YQL"}
+        assert "unknown field: Board" in str(err)
+
+    async def test_issues_count_surfaces_tracker_error_body(
+        self, tracker_client: TrackerClient
+    ) -> None:
+        with aioresponses() as m:
+            m.post(
+                "https://api.tracker.yandex.net/v3/issues/_count",
+                status=422,
+                payload={"errorMessages": ["invalid query"]},
+            )
+            with pytest.raises(TrackerAPIError):
+                await tracker_client.issues_count("Board: 9")
+
+
+class TestOrderToYqlSortBy:
+    @pytest.mark.parametrize(
+        "order,expected",
+        [
+            ([], ""),
+            (["updated_at"], '"Sort By": Updated ASC'),
+            (["-updated_at"], '"Sort By": Updated DESC'),
+            (["+priority"], '"Sort By": Priority ASC'),
+            (
+                ["-updated_at", "+priority"],
+                '"Sort By": Updated DESC, Priority ASC',
+            ),
+            (["story_points"], '"Sort By": StoryPoints ASC'),
+            (["-customField"], '"Sort By": Customfield DESC'),
+        ],
+    )
+    def test_mapping(self, order: list[str], expected: str) -> None:
+        assert _order_to_yql_sort_by(order) == expected

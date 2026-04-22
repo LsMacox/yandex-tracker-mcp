@@ -15,7 +15,7 @@ from pydantic import BaseModel, RootModel
 from yandex.cloud.iam.v1.iam_token_service_pb2 import CreateIamTokenRequest
 from yandex.cloud.iam.v1.iam_token_service_pb2_grpc import IamTokenServiceStub
 
-from mcp_tracker.tracker.custom.errors import IssueNotFound
+from mcp_tracker.tracker.custom.errors import IssueNotFound, TrackerAPIError
 from mcp_tracker.tracker.proto.boards import BoardsProtocol
 from mcp_tracker.tracker.proto.common import YandexAuth
 from mcp_tracker.tracker.proto.extras import (
@@ -105,6 +105,90 @@ AutoactionList = RootModel[list[Autoaction]]
 MacroList = RootModel[list[Macro]]
 WorkflowList = RootModel[list[Workflow]]
 EntityList = RootModel[list[dict[str, Any]]]
+
+
+async def _raise_tracker_error(response: Any) -> None:
+    """Read response body, parse Tracker-specific error fields, raise TrackerAPIError.
+
+    The Yandex Tracker API usually returns `{"errorMessages": [...], "errors": {...}}`
+    on 4xx responses. This helper surfaces those in the raised exception so callers
+    can see the actual cause instead of a bare status code.
+    """
+    try:
+        body = await response.text()
+    except Exception:
+        body = ""
+
+    error_messages: list[str] | None = None
+    errors: dict[str, Any] | None = None
+    if body:
+        try:
+            import json as _json
+
+            data = _json.loads(body)
+            if isinstance(data, dict):
+                raw_msgs = data.get("errorMessages")
+                if isinstance(raw_msgs, list):
+                    error_messages = [str(m) for m in raw_msgs]
+                raw_err = data.get("errors")
+                if isinstance(raw_err, dict):
+                    errors = {str(k): v for k, v in raw_err.items()}
+        except Exception:
+            pass
+
+    raise TrackerAPIError(
+        status=response.status,
+        url=str(response.url),
+        error_messages=error_messages,
+        errors=errors,
+        raw_body=body,
+    )
+
+
+# Maps snake_case / friendly field names to YQL Sort By keys.
+_SORT_FIELD_YQL: dict[str, str] = {
+    "updated_at": "Updated",
+    "updated": "Updated",
+    "created_at": "Created",
+    "created": "Created",
+    "key": "Key",
+    "summary": "Summary",
+    "status": "Status",
+    "assignee": "Assignee",
+    "priority": "Priority",
+    "type": "Type",
+    "deadline": "Deadline",
+    "start": "Start",
+    "story_points": "StoryPoints",
+    "storypoints": "StoryPoints",
+    "resolution": "Resolution",
+}
+
+
+def _order_to_yql_sort_by(order: list[str]) -> str:
+    """Convert ``['-updated_at', '+priority']`` -> ``'"Sort By": Updated DESC, Priority ASC'``.
+
+    Prefix '-' → DESC, '+' or none → ASC. Unknown keys are passed as-is
+    (title-cased). Returns empty string on empty input.
+    """
+    parts: list[str] = []
+    for item in order:
+        if not item:
+            continue
+        direction = "ASC"
+        name = item
+        if name.startswith("-"):
+            direction = "DESC"
+            name = name[1:]
+        elif name.startswith("+"):
+            name = name[1:]
+        mapped = _SORT_FIELD_YQL.get(name.lower()) or "".join(
+            part.capitalize() for part in name.replace("-", "_").split("_")
+        )
+        parts.append(f"{mapped} {direction}")
+    if not parts:
+        return ""
+    return '"Sort By": ' + ", ".join(parts)
 
 
 logger = logging.getLogger(__name__)
@@ -545,12 +629,21 @@ class TrackerClient(
         }
 
         body: dict[str, Any] = {}
+
+        # Tracker's /v3/issues/_search accepts `order` only together with `filter`.
+        # When using raw YQL `query`, sorting is expressed inline as `"Sort By": ...`.
         if query is not None:
+            if order:
+                sort_by = _order_to_yql_sort_by(order)
+                if sort_by and '"Sort By"' not in query:
+                    query = f"{query} {sort_by}".strip()
             body["query"] = query
-        if filter is not None:
-            body["filter"] = filter
-        if order is not None:
-            body["order"] = order
+        else:
+            if filter is not None:
+                body["filter"] = filter
+            if order is not None:
+                body["order"] = order
+
         if keys is not None:
             body["keys"] = keys
 
@@ -560,7 +653,8 @@ class TrackerClient(
             json=body,
             params=params,
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return IssueList.model_validate_json(await response.read()).root
 
     async def issue_get_worklogs(
@@ -724,7 +818,8 @@ class TrackerClient(
         async with self._session.post(
             "v3/issues/_count", headers=await self._build_headers(auth), json=body
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return int(await response.text())
 
     async def issue_create(
@@ -1234,7 +1329,13 @@ class TrackerClient(
             f"v3/boards/{board_id}/sprints",
             headers=await self._build_headers(auth),
         ) as response:
-            response.raise_for_status()
+            # Kanban boards (or boards without a sprint setup) respond with 400/404
+            # instead of an empty list — treat that as "no sprints" rather than
+            # an error, matching what callers typically want.
+            if response.status in (400, 404):
+                return []
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return SprintList.model_validate_json(await response.read()).root
 
     async def sprint_get(

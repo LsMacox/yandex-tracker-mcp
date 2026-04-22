@@ -74,7 +74,10 @@ def register_board_tools(_settings: Settings, mcp: FastMCP[Any]) -> None:
 
     @mcp.tool(
         title="Get Board Sprints",
-        description="List all sprints (draft, in_progress, released, archived) of the given agile board.",
+        description=(
+            "List all sprints (draft, in_progress, released, archived) of the given agile board. "
+            "Returns an empty list for boards without a sprint setup (kanban, filter-only, etc.)."
+        ),
         annotations=ToolAnnotations(readOnlyHint=True),
     )
     async def board_get_sprints(

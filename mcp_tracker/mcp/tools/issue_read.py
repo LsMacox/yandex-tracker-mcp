@@ -95,10 +95,19 @@ def register_issue_read_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
 
     @mcp.tool(
         title="Find Issues",
-        description="Find Yandex Tracker issues. Provide either YQL `query` or a structured "
-        '`filter` dict (e.g. {"queue": "TEST", "assignee": "me()"}). '
-        "Sorting is done via `order` (list of field keys, prefix with '-' for DESC, e.g. ['-created']). "
-        "To restrict fetch to specific issue keys use `keys`.",
+        description=(
+            "Find Yandex Tracker issues. Provide either a YQL `query` string OR a structured "
+            "`filter` dict — not both.\n\n"
+            "YQL examples:\n"
+            "  - `Queue: TEST AND Resolution: empty()`\n"
+            '  - `Boards: "My Board"` (note: plural `Boards`, searches by board NAME, not id)\n'
+            '  - To sort in YQL, embed inline: `Queue: TEST \\"Sort By\\": Updated DESC`\n\n'
+            'Structured filter example: `{"queue": "TEST", "assignee": "me()"}` — use with `order`.\n\n'
+            "`order` accepts a list like `['-updated_at', '+priority']` (prefix `-` for DESC, `+` or none "
+            'for ASC). When combined with a YQL `query` it is auto-converted to a `"Sort By"` clause; '
+            "when combined with `filter` it is passed to the API as-is.\n\n"
+            "To restrict to specific issue keys use `keys`."
+        ),
         annotations=ToolAnnotations(readOnlyHint=True),
     )
     async def issues_find(
@@ -168,7 +177,10 @@ def register_issue_read_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
 
     @mcp.tool(
         title="Count Issues",
-        description="Get the count of Yandex Tracker issues matching a query",
+        description=(
+            "Get the count of Yandex Tracker issues matching a YQL query. "
+            'Use `Boards: "Name"` (plural) to filter by board name; `Board` (singular) is not valid YQL.'
+        ),
         annotations=ToolAnnotations(readOnlyHint=True),
     )
     async def issues_count(
