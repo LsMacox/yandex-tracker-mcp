@@ -88,26 +88,41 @@ def register_component_write_tools(settings: Settings, mcp: FastMCP[Any]) -> Non
 
     @mcp.tool(
         title="Update Component",
-        description="Update component fields (PATCH).",
+        description="Update component fields (PATCH). Pass the current component `version` "
+        "to use optimistic locking (sent as If-Match header). Tracker returns 428 "
+        "Precondition Required when you omit it — fetch via `component_get` first.",
     )
     async def component_update(
         ctx: Context[Any, AppContext],
         component_id: ComponentID,
         fields: Annotated[dict[str, Any], Field(description="Fields to update")],
+        version: Annotated[
+            str | int | None,
+            Field(description="Current component version for If-Match optimistic lock"),
+        ] = None,
     ) -> Component:
         return await ctx.request_context.lifespan_context.components.component_update(
-            component_id, fields=fields, auth=get_yandex_auth(ctx)
+            component_id,
+            fields=fields,
+            version=version,
+            auth=get_yandex_auth(ctx),
         )
 
     @mcp.tool(
         title="Delete Component",
-        description="Delete a component.",
+        description="Delete a component. If Tracker rejects with 428, pass the current "
+        "`version` — same optimistic-lock rule as `component_update`.",
         annotations=ToolAnnotations(destructiveHint=True),
     )
     async def component_delete(
-        ctx: Context[Any, AppContext], component_id: ComponentID
+        ctx: Context[Any, AppContext],
+        component_id: ComponentID,
+        version: Annotated[
+            str | int | None,
+            Field(description="Current component version for If-Match optimistic lock"),
+        ] = None,
     ) -> dict[str, bool]:
         await ctx.request_context.lifespan_context.components.component_delete(
-            component_id, auth=get_yandex_auth(ctx)
+            component_id, version=version, auth=get_yandex_auth(ctx)
         )
         return {"ok": True}

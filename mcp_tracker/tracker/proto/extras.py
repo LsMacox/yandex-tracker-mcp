@@ -90,11 +90,16 @@ class ComponentsProtocol(Protocol):
         component_id: str | int,
         *,
         fields: dict[str, Any],
+        version: str | int | None = None,
         auth: YandexAuth | None = None,
     ) -> Component: ...
 
     async def component_delete(
-        self, component_id: str | int, *, auth: YandexAuth | None = None
+        self,
+        component_id: str | int,
+        *,
+        version: str | int | None = None,
+        auth: YandexAuth | None = None,
     ) -> None: ...
 
 

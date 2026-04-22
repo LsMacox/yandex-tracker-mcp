@@ -1733,24 +1733,37 @@ class TrackerClient(
         component_id: str | int,
         *,
         fields: dict[str, Any],
+        version: str | int | None = None,
         auth: YandexAuth | None = None,
     ) -> Component:
+        headers = await self._build_headers(auth)
+        if version is not None:
+            headers["If-Match"] = f'"{version}"'
         async with self._session.patch(
             f"v3/components/{component_id}",
-            headers=await self._build_headers(auth),
+            headers=headers,
             json=fields,
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
             return Component.model_validate_json(await response.read())
 
     async def component_delete(
-        self, component_id: str | int, *, auth: YandexAuth | None = None
+        self,
+        component_id: str | int,
+        *,
+        version: str | int | None = None,
+        auth: YandexAuth | None = None,
     ) -> None:
+        headers = await self._build_headers(auth)
+        if version is not None:
+            headers["If-Match"] = f'"{version}"'
         async with self._session.delete(
             f"v3/components/{component_id}",
-            headers=await self._build_headers(auth),
+            headers=headers,
         ) as response:
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
 
     # --- entities (projects/portfolios/goals, new API) ---
     async def entities_search(

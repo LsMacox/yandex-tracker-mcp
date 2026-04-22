@@ -391,6 +391,50 @@ class TestBoardsWrite:
         assert result.id == 55
 
 
+class TestComponentIfMatch:
+    """Regression for 0.8.2: component mutations need If-Match from `version`."""
+
+    async def test_component_update_sends_if_match(
+        self, tracker_client: TrackerClient
+    ) -> None:
+        captured_headers: dict[str, Any] = {}
+
+        def callback(url: Any, **kwargs: Any) -> Any:
+            from aioresponses.core import CallbackResult
+
+            captured_headers.update(kwargs.get("headers") or {})
+            return CallbackResult(status=200, body='{"id": 1, "name": "New"}')
+
+        with aioresponses() as m:
+            m.patch(
+                "https://api.tracker.yandex.net/v3/components/1",
+                callback=callback,
+            )
+            await tracker_client.component_update(1, fields={"name": "New"}, version=3)
+
+        assert captured_headers.get("If-Match") == '"3"'
+
+    async def test_component_delete_sends_if_match(
+        self, tracker_client: TrackerClient
+    ) -> None:
+        captured_headers: dict[str, Any] = {}
+
+        def callback(url: Any, **kwargs: Any) -> Any:
+            from aioresponses.core import CallbackResult
+
+            captured_headers.update(kwargs.get("headers") or {})
+            return CallbackResult(status=204)
+
+        with aioresponses() as m:
+            m.delete(
+                "https://api.tracker.yandex.net/v3/components/1",
+                callback=callback,
+            )
+            await tracker_client.component_delete(1, version=3)
+
+        assert captured_headers.get("If-Match") == '"3"'
+
+
 class TestWorklogStartAutofill:
     """Regression for 0.8.1: Tracker requires `start` even when docs mark it optional."""
 

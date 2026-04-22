@@ -845,16 +845,23 @@ def make_cached_protocols(
             component_id: str | int,
             *,
             fields: dict[str, Any],
+            version: str | int | None = None,
             auth: YandexAuth | None = None,
         ) -> Component:
             return await self._original.component_update(
-                component_id, fields=fields, auth=auth
+                component_id, fields=fields, version=version, auth=auth
             )
 
         async def component_delete(
-            self, component_id: str | int, *, auth: YandexAuth | None = None
+            self,
+            component_id: str | int,
+            *,
+            version: str | int | None = None,
+            auth: YandexAuth | None = None,
         ) -> None:
-            return await self._original.component_delete(component_id, auth=auth)
+            return await self._original.component_delete(
+                component_id, version=version, auth=auth
+            )
 
     class CachingEntitiesProtocol(EntitiesProtocolWrap):
         @cached(**cache_config)
