@@ -161,13 +161,30 @@ class TestAutomations:
         assert isinstance(result[0], Workflow)
 
     async def test_queue_workflow_get(self, tracker_client: TrackerClient) -> None:
+        # The client fetches all workflows and filters by queue key/id client-side
+        # because Tracker has no /queues/<id>/workflow endpoint.
         with aioresponses() as m:
             m.get(
-                "https://api.tracker.yandex.net/v3/queues/TEST/workflow",
-                payload={"id": "wf1", "name": "Kanban"},
+                "https://api.tracker.yandex.net/v3/workflows",
+                payload=[
+                    {"id": "wf1", "name": "Kanban", "queue": {"key": "TEST"}},
+                    {"id": "wf2", "name": "Other", "queue": {"key": "OTHER"}},
+                ],
             )
             result = await tracker_client.queue_workflow_get("TEST")
         assert isinstance(result, Workflow)
+        assert result.id == "wf1"
+
+    async def test_queue_workflow_get_returns_none_when_absent(
+        self, tracker_client: TrackerClient
+    ) -> None:
+        with aioresponses() as m:
+            m.get(
+                "https://api.tracker.yandex.net/v3/workflows",
+                payload=[{"id": "wf1", "queue": {"key": "OTHER"}}],
+            )
+            result = await tracker_client.queue_workflow_get("TEST")
+        assert result is None
 
 
 class TestBulkChange:
@@ -598,6 +615,100 @@ class TestSprintCreateEndpoint:
         assert captured_body["name"] == "Sprint"
         assert captured_body["startDate"] == "2026-01-01"
         assert captured_body["endDate"] == "2026-01-14"
+
+
+class TestEntitiesSearchWrapper:
+    """Regressions for 0.8.0: Tracker returns `{hits, pages, values}` wrapper."""
+
+    async def test_projects_search_unwraps_values(
+        self, tracker_client: TrackerClient
+    ) -> None:
+        with aioresponses() as m:
+            m.post(
+                "https://api.tracker.yandex.net/v3/entities/project/_search?perPage=50&page=1",
+                payload={
+                    "hits": 2,
+                    "pages": 1,
+                    "values": [
+                        {"id": "p1", "name": "Project 1"},
+                        {"id": "p2", "name": "Project 2"},
+                    ],
+                },
+            )
+            result = await tracker_client.projects_search()
+        assert len(result) == 2
+        assert result[0].id == "p1"
+        assert result[1].id == "p2"
+
+    async def test_projects_search_accepts_bare_list(
+        self, tracker_client: TrackerClient
+    ) -> None:
+        with aioresponses() as m:
+            m.post(
+                "https://api.tracker.yandex.net/v3/entities/project/_search?perPage=50&page=1",
+                payload=[{"id": "p1", "name": "One"}],
+            )
+            result = await tracker_client.projects_search()
+        assert len(result) == 1
+        assert result[0].id == "p1"
+
+
+class TestChecklistIssueResponse:
+    """Regressions for 0.8.0: checklist mutation returns the full Issue body."""
+
+    async def test_add_checklist_item_extracts_items_from_issue(
+        self, tracker_client: TrackerClient
+    ) -> None:
+        with aioresponses() as m:
+            m.post(
+                "https://api.tracker.yandex.net/v3/issues/TEST-1/checklistItems",
+                payload={
+                    "self": "https://...",
+                    "key": "TEST-1",
+                    "checklistItems": [
+                        {"id": "c1", "text": "First"},
+                        {"id": "c2", "text": "Second"},
+                    ],
+                },
+            )
+            result = await tracker_client.issue_add_checklist_item(
+                "TEST-1", text="Second"
+            )
+        assert len(result) == 2
+        assert result[0].id == "c1"
+        assert result[1].text == "Second"
+
+    async def test_update_checklist_item_extracts_items(
+        self, tracker_client: TrackerClient
+    ) -> None:
+        with aioresponses() as m:
+            m.patch(
+                "https://api.tracker.yandex.net/v3/issues/TEST-1/checklistItems/c1",
+                payload={
+                    "key": "TEST-1",
+                    "checklistItems": [{"id": "c1", "text": "Done", "checked": True}],
+                },
+            )
+            result = await tracker_client.issue_update_checklist_item(
+                "TEST-1", "c1", checked=True
+            )
+        assert len(result) == 1
+        assert result[0].checked is True
+
+    async def test_add_checklist_item_accepts_bare_list(
+        self, tracker_client: TrackerClient
+    ) -> None:
+        """Older variants may return a bare array — we still accept it."""
+        with aioresponses() as m:
+            m.post(
+                "https://api.tracker.yandex.net/v3/issues/TEST-1/checklistItems",
+                payload=[{"id": "c1", "text": "Only"}],
+            )
+            result = await tracker_client.issue_add_checklist_item(
+                "TEST-1", text="Only"
+            )
+        assert len(result) == 1
+        assert result[0].id == "c1"
 
 
 class TestDashboardUpdateVersion:

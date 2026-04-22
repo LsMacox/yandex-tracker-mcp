@@ -21,25 +21,26 @@ def register_user_tools(_settings: Settings, mcp: FastMCP[Any]) -> None:
 
     @mcp.tool(
         title="Get All Users",
-        description="Get information about user accounts registered in the organization",
+        description="Get information about user accounts registered in the organization. "
+        "Returns a `{'users': [...]}` object.",
         annotations=ToolAnnotations(readOnlyHint=True),
     )
     async def users_get_all(
         ctx: Context[Any, AppContext],
         page: PageParam = 1,
         per_page: PerPageParam = 50,
-    ) -> list[User]:
-        return await ctx.request_context.lifespan_context.users.users_list(
+    ) -> dict[str, list[User]]:
+        users = await ctx.request_context.lifespan_context.users.users_list(
             per_page=per_page,
             page=page,
             auth=get_yandex_auth(ctx),
         )
+        return {"users": users}
 
     @mcp.tool(
         title="Search Users",
         description="Search user based on login, email or real name (first or last name, or both). "
-        "Returns either single user or multiple users if several match the query or an empty list "
-        "if no users matched.",
+        "Returns a `{'users': [...]}` object — list is empty if no match.",
         annotations=ToolAnnotations(readOnlyHint=True),
     )
     async def users_search(
@@ -47,7 +48,7 @@ def register_user_tools(_settings: Settings, mcp: FastMCP[Any]) -> None:
         login_or_email_or_name: Annotated[
             str, Field(description="User login, email or real name to search for")
         ],
-    ) -> list[User]:
+    ) -> dict[str, list[User]]:
         per_page = 100
         page = 1
 
@@ -67,10 +68,10 @@ def register_user_tools(_settings: Settings, mcp: FastMCP[Any]) -> None:
 
             for user in batch:
                 if user.login and login_or_email_or_name == user.login.strip().lower():
-                    return [user]
+                    return {"users": [user]}
 
                 if user.email and login_or_email_or_name == user.email.strip().lower():
-                    return [user]
+                    return {"users": [user]}
 
             all_users.extend(batch)
             page += 1
@@ -82,7 +83,7 @@ def register_user_tools(_settings: Settings, mcp: FastMCP[Any]) -> None:
             login_or_email_or_name, names, score_cutoff=80, limit=3
         )
         matched_users = [all_users[idx] for name, score, idx in results]
-        return matched_users
+        return {"users": matched_users}
 
     @mcp.tool(
         title="Get User",

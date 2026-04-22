@@ -94,9 +94,10 @@ class TestIssueGetComments:
         assert not result.isError
         mock_issues_protocol.issue_get_comments.assert_called_once()
         content = get_tool_result_content(result)
-        assert isinstance(content, list)
-        assert len(content) == len(sample_comments)
-        assert content[0]["text"] == sample_comments[0].text
+        assert isinstance(content, dict)
+        items = content["comments"]
+        assert len(items) == len(sample_comments)
+        assert items[0]["text"] == sample_comments[0].text
 
     async def test_restricted_queue_raises_error(
         self,
@@ -127,9 +128,10 @@ class TestIssueGetLinks:
         assert not result.isError
         mock_issues_protocol.issues_get_links.assert_called_once()
         content = get_tool_result_content(result)
-        assert isinstance(content, list)
-        assert len(content) == len(sample_links)
-        assert content[0]["direction"] == sample_links[0].direction
+        assert isinstance(content, dict)
+        items = content["links"]
+        assert len(items) == len(sample_links)
+        assert items[0]["direction"] == sample_links[0].direction
 
 
 class TestIssuesFind:
@@ -146,9 +148,10 @@ class TestIssuesFind:
         assert not result.isError
         mock_issues_protocol.issues_find.assert_called_once()
         content = get_tool_result_content(result)
-        assert isinstance(content, list)
-        assert len(content) == len(sample_issues)
-        assert content[0]["key"] == sample_issues[0].key
+        assert isinstance(content, dict)
+        items = content["issues"]
+        assert len(items) == len(sample_issues)
+        assert items[0]["key"] == sample_issues[0].key
 
     async def test_with_pagination(
         self,
@@ -167,7 +170,7 @@ class TestIssuesFind:
         assert call_kwargs["page"] == 2
         assert call_kwargs["per_page"] == 50
         content = get_tool_result_content(result)
-        assert len(content) == len(sample_issues)
+        assert len(content["issues"]) == len(sample_issues)
 
     async def test_excludes_description_by_default(
         self,
@@ -183,7 +186,7 @@ class TestIssuesFind:
         mock_issues_protocol.issues_find.assert_called_once()
         content = get_tool_result_content(result)
         # By default, description is excluded (set to None)
-        for issue in content:
+        for issue in content["issues"]:
             assert issue.get("description") is None
 
 
@@ -256,9 +259,10 @@ class TestIssueGetAttachments:
         assert not result.isError
         mock_issues_protocol.issue_get_attachments.assert_called_once()
         content = get_tool_result_content(result)
-        assert isinstance(content, list)
-        assert len(content) == len(sample_attachments)
-        assert content[0]["name"] == sample_attachments[0].name
+        assert isinstance(content, dict)
+        items = content["attachments"]
+        assert len(items) == len(sample_attachments)
+        assert items[0]["name"] == sample_attachments[0].name
 
 
 class TestIssueGetChecklist:
@@ -277,9 +281,10 @@ class TestIssueGetChecklist:
         assert not result.isError
         mock_issues_protocol.issue_get_checklist.assert_called_once()
         content = get_tool_result_content(result)
-        assert isinstance(content, list)
-        assert len(content) == len(sample_checklist)
-        assert content[0]["text"] == sample_checklist[0].text
+        assert isinstance(content, dict)
+        items = content["checklist"]
+        assert len(items) == len(sample_checklist)
+        assert items[0]["text"] == sample_checklist[0].text
 
 
 class TestIssueGetTransitions:
@@ -298,7 +303,8 @@ class TestIssueGetTransitions:
         assert not result.isError
         mock_issues_protocol.issue_get_transitions.assert_called_once()
         content = get_tool_result_content(result)
-        assert isinstance(content, list)
-        assert len(content) == len(sample_transitions)
-        assert content[0]["id"] == sample_transitions[0].id
-        assert content[0]["display"] == sample_transitions[0].display
+        assert isinstance(content, dict)
+        items = content["transitions"]
+        assert len(items) == len(sample_transitions)
+        assert items[0]["id"] == sample_transitions[0].id
+        assert items[0]["display"] == sample_transitions[0].display

@@ -82,9 +82,10 @@ class TestBoardsGetAll:
         assert not result.isError
         mock_boards_protocol.boards_list.assert_called_once()
         content = get_tool_result_content(result)
-        assert isinstance(content, list)
-        assert len(content) == len(sample_boards)
-        assert content[0]["name"] == "My Board"
+        assert isinstance(content, dict)
+        items = content["boards"]
+        assert len(items) == len(sample_boards)
+        assert items[0]["name"] == "My Board"
 
 
 class TestBoardGet:
@@ -119,8 +120,9 @@ class TestBoardGetColumns:
         assert not result.isError
         assert mock_boards_protocol.board_get_columns.call_args.args[0] == 73
         content = get_tool_result_content(result)
-        assert len(content) == 2
-        assert content[0]["name"] == "Open"
+        items = content["columns"]
+        assert len(items) == 2
+        assert items[0]["name"] == "Open"
 
 
 class TestBoardGetSprints:
@@ -136,8 +138,9 @@ class TestBoardGetSprints:
 
         assert not result.isError
         content = get_tool_result_content(result)
-        assert len(content) == 2
-        assert content[0]["status"] == "in_progress"
+        items = content["sprints"]
+        assert len(items) == 2
+        assert items[0]["status"] == "in_progress"
 
 
 class TestSprintGet:

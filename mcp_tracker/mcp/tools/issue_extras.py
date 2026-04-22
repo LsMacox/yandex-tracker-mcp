@@ -80,9 +80,9 @@ def register_issue_extras_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
             dict[str, Any] | None,
             Field(description="Deadline object {date, deadlineType, isExceeded?}"),
         ] = None,
-    ) -> list[ChecklistItem]:
+    ) -> dict[str, list[ChecklistItem]]:
         check_issue_access(settings, issue_id)
-        return (
+        items = (
             await ctx.request_context.lifespan_context.issues.issue_add_checklist_item(
                 issue_id,
                 text=text,
@@ -92,6 +92,7 @@ def register_issue_extras_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
                 auth=get_yandex_auth(ctx),
             )
         )
+        return {"checklist": items}
 
     @mcp.tool(
         title="Update Checklist Item",
@@ -110,9 +111,9 @@ def register_issue_extras_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
         deadline: Annotated[
             dict[str, Any] | None, Field(description="Deadline object")
         ] = None,
-    ) -> list[ChecklistItem]:
+    ) -> dict[str, list[ChecklistItem]]:
         check_issue_access(settings, issue_id)
-        return await ctx.request_context.lifespan_context.issues.issue_update_checklist_item(
+        items = await ctx.request_context.lifespan_context.issues.issue_update_checklist_item(
             issue_id,
             item_id,
             text=text,
@@ -121,6 +122,7 @@ def register_issue_extras_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
             deadline=deadline,
             auth=get_yandex_auth(ctx),
         )
+        return {"checklist": items}
 
     @mcp.tool(
         title="Delete Checklist Item",

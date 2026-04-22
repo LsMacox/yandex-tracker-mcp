@@ -1234,7 +1234,7 @@ def make_cached_protocols(
         @cached(**cache_config)
         async def queue_workflow_get(
             self, queue_id: str, *, auth: YandexAuth | None = None
-        ) -> Workflow:
+        ) -> Workflow | None:
             return await self._original.queue_workflow_get(queue_id, auth=auth)
 
     class CachingBulkChangeProtocol(BulkChangeProtocolWrap):

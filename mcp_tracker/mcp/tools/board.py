@@ -34,15 +34,16 @@ def register_board_tools(_settings: Settings, mcp: FastMCP[Any]) -> None:
     @mcp.tool(
         title="Get All Boards",
         description="List all agile task boards available in the organization. "
-        "Returns board id, name, columns, calendar and creator metadata.",
+        "Returns a `{'boards': [...]}` object.",
         annotations=ToolAnnotations(readOnlyHint=True),
     )
     async def boards_get_all(
         ctx: Context[Any, AppContext, Request],
-    ) -> list[Board]:
-        return await ctx.request_context.lifespan_context.boards.boards_list(
+    ) -> dict[str, list[Board]]:
+        items = await ctx.request_context.lifespan_context.boards.boards_list(
             auth=get_yandex_auth(ctx),
         )
+        return {"boards": items}
 
     @mcp.tool(
         title="Get Board",
@@ -60,34 +61,38 @@ def register_board_tools(_settings: Settings, mcp: FastMCP[Any]) -> None:
 
     @mcp.tool(
         title="Get Board Columns",
-        description="Get all columns of the specified agile board with their linked issue statuses.",
+        description="Get all columns of the specified agile board with their linked issue statuses. "
+        "Returns a `{'columns': [...]}` object.",
         annotations=ToolAnnotations(readOnlyHint=True),
     )
     async def board_get_columns(
         ctx: Context[Any, AppContext, Request],
         board_id: BoardID,
-    ) -> list[BoardColumn]:
-        return await ctx.request_context.lifespan_context.boards.board_get_columns(
+    ) -> dict[str, list[BoardColumn]]:
+        items = await ctx.request_context.lifespan_context.boards.board_get_columns(
             board_id,
             auth=get_yandex_auth(ctx),
         )
+        return {"columns": items}
 
     @mcp.tool(
         title="Get Board Sprints",
         description=(
             "List all sprints (draft, in_progress, released, archived) of the given agile board. "
-            "Returns an empty list for boards without a sprint setup (kanban, filter-only, etc.)."
+            "Returns a `{'sprints': [...]}` object. The `sprints` array is empty for boards "
+            "without a sprint setup (kanban, filter-only, etc.)."
         ),
         annotations=ToolAnnotations(readOnlyHint=True),
     )
     async def board_get_sprints(
         ctx: Context[Any, AppContext, Request],
         board_id: BoardID,
-    ) -> list[Sprint]:
-        return await ctx.request_context.lifespan_context.boards.board_get_sprints(
+    ) -> dict[str, list[Sprint]]:
+        items = await ctx.request_context.lifespan_context.boards.board_get_sprints(
             board_id,
             auth=get_yandex_auth(ctx),
         )
+        return {"sprints": items}
 
     @mcp.tool(
         title="Get Sprint",

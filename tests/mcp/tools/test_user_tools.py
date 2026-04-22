@@ -20,10 +20,11 @@ class TestUsersGetAll:
         assert not result.isError
         mock_users_protocol.users_list.assert_called_once()
         content = get_tool_result_content(result)
-        assert isinstance(content, list)
-        assert len(content) == len(sample_users)
-        assert content[0]["login"] == sample_users[0].login
-        assert content[0]["display"] == sample_users[0].display
+        assert isinstance(content, dict)
+        items = content["users"]
+        assert len(items) == len(sample_users)
+        assert items[0]["login"] == sample_users[0].login
+        assert items[0]["display"] == sample_users[0].display
 
     async def test_with_pagination(
         self,
@@ -42,7 +43,7 @@ class TestUsersGetAll:
         assert call_kwargs["page"] == 2
         assert call_kwargs["per_page"] == 25
         content = get_tool_result_content(result)
-        assert len(content) == len(sample_users)
+        assert len(content["users"]) == len(sample_users)
 
 
 class TestUsersSearch:
@@ -60,9 +61,10 @@ class TestUsersSearch:
 
         assert not result.isError
         content = get_tool_result_content(result)
-        assert isinstance(content, list)
-        assert len(content) == 1
-        assert content[0]["login"] == "testuser"
+        assert isinstance(content, dict)
+        items = content["users"]
+        assert len(items) == 1
+        assert items[0]["login"] == "testuser"
 
     async def test_finds_user_by_exact_email(
         self,
@@ -78,9 +80,10 @@ class TestUsersSearch:
 
         assert not result.isError
         content = get_tool_result_content(result)
-        assert isinstance(content, list)
-        assert len(content) == 1
-        assert content[0]["email"] == "testuser@example.com"
+        assert isinstance(content, dict)
+        items = content["users"]
+        assert len(items) == 1
+        assert items[0]["email"] == "testuser@example.com"
 
     async def test_fuzzy_matches_by_name(
         self,
@@ -96,9 +99,9 @@ class TestUsersSearch:
 
         assert not result.isError
         content = get_tool_result_content(result)
-        assert isinstance(content, list)
+        assert isinstance(content, dict)
         # Should find at least one user matching "Test User"
-        assert len(content) >= 1
+        assert len(content["users"]) >= 1
 
     async def test_returns_empty_list_when_no_match(
         self,
@@ -113,8 +116,8 @@ class TestUsersSearch:
 
         assert not result.isError
         content = get_tool_result_content(result)
-        assert isinstance(content, list)
-        assert len(content) == 0
+        assert isinstance(content, dict)
+        assert content["users"] == []
 
 
 class TestUserGet:

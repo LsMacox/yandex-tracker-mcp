@@ -369,7 +369,7 @@ class AutomationsProtocol(Protocol):
 
     async def queue_workflow_get(
         self, queue_id: str, *, auth: YandexAuth | None = None
-    ) -> Workflow: ...
+    ) -> Workflow | None: ...
 
 
 class AutomationsProtocolWrap(AutomationsProtocol):

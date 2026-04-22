@@ -28,7 +28,8 @@ def register_queue_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
 
     @mcp.tool(
         title="Get All Queues",
-        description="Find all Yandex Tracker queues available to the user (queue is a project in some sense)",
+        description="Find all Yandex Tracker queues available to the user (queue is a project in some sense). "
+        "Returns a `{'queues': [...]}` object.",
         annotations=ToolAnnotations(readOnlyHint=True),
     )
     async def queues_get_all(
@@ -49,7 +50,7 @@ def register_queue_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
             ),
         ] = None,
         per_page: PerPageParam = 100,
-    ) -> list[Queue]:
+    ) -> dict[str, list[Queue]]:
         result: list[Queue] = []
 
         fetch_all_pages = page is None
@@ -84,7 +85,7 @@ def register_queue_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
         if fields is not None:
             set_non_needed_fields_null(result, {f.name for f in fields})
 
-        return result
+        return {"queues": result}
 
     @mcp.tool(
         title="Get Queue Tags",
@@ -108,18 +109,22 @@ def register_queue_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
 
     @mcp.tool(
         title="Get Queue Versions",
-        description="Get all versions for a specific Yandex Tracker queue",
+        description="Get all versions for a specific Yandex Tracker queue. "
+        "Returns a `{'versions': [...]}` object.",
         annotations=ToolAnnotations(readOnlyHint=True),
     )
     async def queue_get_versions(
         ctx: Context[Any, AppContext],
         queue_id: QueueID,
-    ) -> list[QueueVersion]:
+    ) -> dict[str, list[QueueVersion]]:
         check_queue_access(settings, queue_id)
-        return await ctx.request_context.lifespan_context.queues.queues_get_versions(
-            queue_id,
-            auth=get_yandex_auth(ctx),
+        versions = (
+            await ctx.request_context.lifespan_context.queues.queues_get_versions(
+                queue_id,
+                auth=get_yandex_auth(ctx),
+            )
         )
+        return {"versions": versions}
 
     @mcp.tool(
         title="Get Queue Fields",
@@ -139,14 +144,15 @@ def register_queue_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
                 "When True, makes parallel requests to get both global and local fields."
             ),
         ] = True,
-    ) -> list[GlobalField]:
+    ) -> dict[str, list[GlobalField]]:
         check_queue_access(settings, queue_id)
 
         auth = get_yandex_auth(ctx)
         queues = ctx.request_context.lifespan_context.queues
 
         if not include_local_fields:
-            return await queues.queues_get_fields(queue_id, auth=auth)
+            items = await queues.queues_get_fields(queue_id, auth=auth)
+            return {"fields": items}
 
         async with asyncio.TaskGroup() as tg:
             global_fields_task = tg.create_task(
@@ -155,7 +161,7 @@ def register_queue_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
             local_fields_task = tg.create_task(
                 queues.queues_get_local_fields(queue_id, auth=auth)
             )
-        return global_fields_task.result() + local_fields_task.result()
+        return {"fields": global_fields_task.result() + local_fields_task.result()}
 
     @mcp.tool(
         title="Get Queue Metadata",

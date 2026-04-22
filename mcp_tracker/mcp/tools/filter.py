@@ -18,13 +18,17 @@ FilterID = Annotated[str, Field(description="Saved filter identifier")]
 def register_filter_tools(_settings: Settings, mcp: FastMCP[Any]) -> None:
     @mcp.tool(
         title="List Issue Filters",
-        description="List saved issue filters accessible to the user.",
+        description="List saved issue filters accessible to the user. "
+        "Returns a `{'filters': [...]}` object.",
         annotations=ToolAnnotations(readOnlyHint=True),
     )
-    async def filters_list(ctx: Context[Any, AppContext]) -> list[IssueFilter]:
-        return await ctx.request_context.lifespan_context.filters.filters_list(
+    async def filters_list(
+        ctx: Context[Any, AppContext],
+    ) -> dict[str, list[IssueFilter]]:
+        items = await ctx.request_context.lifespan_context.filters.filters_list(
             auth=get_yandex_auth(ctx)
         )
+        return {"filters": items}
 
     @mcp.tool(
         title="Get Issue Filter",

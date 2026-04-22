@@ -24,7 +24,8 @@ EntityType = Literal["project", "portfolio", "goal"]
 def register_project_tools(_settings: Settings, mcp: FastMCP[Any]) -> None:
     @mcp.tool(
         title="Search Projects",
-        description="Search projects via the new entities API. Optional filter/order.",
+        description="Search projects via the new entities API. "
+        "Returns a `{'projects': [...]}` object.",
         annotations=ToolAnnotations(readOnlyHint=True),
     )
     async def projects_search(
@@ -38,18 +39,20 @@ def register_project_tools(_settings: Settings, mcp: FastMCP[Any]) -> None:
         ] = None,
         page: PageParam = 1,
         per_page: PerPageParam = 50,
-    ) -> list[Project]:
-        return await ctx.request_context.lifespan_context.entities.projects_search(
+    ) -> dict[str, list[Project]]:
+        items = await ctx.request_context.lifespan_context.entities.projects_search(
             filter=filter,
             order=order,
             per_page=per_page,
             page=page,
             auth=get_yandex_auth(ctx),
         )
+        return {"projects": items}
 
     @mcp.tool(
         title="Search Portfolios",
-        description="Search portfolios via the new entities API.",
+        description="Search portfolios via the new entities API. "
+        "Returns a `{'portfolios': [...]}` object.",
         annotations=ToolAnnotations(readOnlyHint=True),
     )
     async def portfolios_search(
@@ -58,18 +61,20 @@ def register_project_tools(_settings: Settings, mcp: FastMCP[Any]) -> None:
         order: Annotated[list[str] | None, Field(description="Sort")] = None,
         page: PageParam = 1,
         per_page: PerPageParam = 50,
-    ) -> list[Portfolio]:
-        return await ctx.request_context.lifespan_context.entities.portfolios_search(
+    ) -> dict[str, list[Portfolio]]:
+        items = await ctx.request_context.lifespan_context.entities.portfolios_search(
             filter=filter,
             order=order,
             per_page=per_page,
             page=page,
             auth=get_yandex_auth(ctx),
         )
+        return {"portfolios": items}
 
     @mcp.tool(
         title="Search Goals",
-        description="Search OKR-style goals via the new entities API.",
+        description="Search OKR-style goals via the new entities API. "
+        "Returns a `{'goals': [...]}` object.",
         annotations=ToolAnnotations(readOnlyHint=True),
     )
     async def goals_search(
@@ -78,14 +83,15 @@ def register_project_tools(_settings: Settings, mcp: FastMCP[Any]) -> None:
         order: Annotated[list[str] | None, Field(description="Sort")] = None,
         page: PageParam = 1,
         per_page: PerPageParam = 50,
-    ) -> list[Goal]:
-        return await ctx.request_context.lifespan_context.entities.goals_search(
+    ) -> dict[str, list[Goal]]:
+        items = await ctx.request_context.lifespan_context.entities.goals_search(
             filter=filter,
             order=order,
             per_page=per_page,
             page=page,
             auth=get_yandex_auth(ctx),
         )
+        return {"goals": items}
 
     @mcp.tool(
         title="Get Entity",
@@ -112,17 +118,21 @@ def register_project_tools(_settings: Settings, mcp: FastMCP[Any]) -> None:
 
     @mcp.tool(
         title="List Legacy Projects",
-        description="List legacy (/v2/projects) project entities — kept for backward compatibility.",
+        description="List legacy (/v2/projects) project entities. "
+        "Returns a `{'projects': [...]}` object.",
         annotations=ToolAnnotations(readOnlyHint=True),
     )
     async def projects_legacy_list(
         ctx: Context[Any, AppContext],
         page: PageParam = 1,
         per_page: PerPageParam = 50,
-    ) -> list[ProjectLegacy]:
-        return await ctx.request_context.lifespan_context.entities.projects_legacy_list(
-            per_page=per_page, page=page, auth=get_yandex_auth(ctx)
+    ) -> dict[str, list[ProjectLegacy]]:
+        items = (
+            await ctx.request_context.lifespan_context.entities.projects_legacy_list(
+                per_page=per_page, page=page, auth=get_yandex_auth(ctx)
+            )
         )
+        return {"projects": items}
 
 
 def register_project_write_tools(_settings: Settings, mcp: FastMCP[Any]) -> None:

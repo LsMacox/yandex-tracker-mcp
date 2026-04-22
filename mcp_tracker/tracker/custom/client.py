@@ -807,8 +807,12 @@ class TrackerClient(
         ) as response:
             if response.status == 404:
                 raise IssueNotFound(issue_id)
-            response.raise_for_status()
-            return ChecklistItemList.model_validate_json(await response.read()).root
+            if response.status >= 400:
+                await _raise_tracker_error(response)
+            raw = await response.read()
+        # Tracker may return either a bare list of items or an Issue object
+        # with the checklist embedded — accept both shapes.
+        return self._extract_checklist_from_issue(raw)
 
     async def issues_count(self, query: str, *, auth: YandexAuth | None = None) -> int:
         body: dict[str, Any] = {
@@ -1095,6 +1099,27 @@ class TrackerClient(
             response.raise_for_status()
 
     # --- checklist write ---
+    @staticmethod
+    def _extract_checklist_from_issue(raw: bytes) -> list[ChecklistItem]:
+        """Parse Tracker's checklist-mutation response.
+
+        Tracker returns the full Issue object with the updated checklist inside
+        the `checklistItems` field; older variants may return a bare list.
+        """
+        import json as _json
+
+        try:
+            data = _json.loads(raw)
+        except Exception:
+            return []
+        if isinstance(data, list):
+            return [ChecklistItem.model_validate(item) for item in data]
+        if isinstance(data, dict):
+            items = data.get("checklistItems") or data.get("checklist") or []
+            if isinstance(items, list):
+                return [ChecklistItem.model_validate(item) for item in items]
+        return []
+
     async def issue_add_checklist_item(
         self,
         issue_id: str,
@@ -1120,8 +1145,10 @@ class TrackerClient(
         ) as response:
             if response.status == 404:
                 raise IssueNotFound(issue_id)
-            response.raise_for_status()
-            return ChecklistItemList.model_validate_json(await response.read()).root
+            if response.status >= 400:
+                await _raise_tracker_error(response)
+            raw = await response.read()
+        return self._extract_checklist_from_issue(raw)
 
     async def issue_update_checklist_item(
         self,
@@ -1151,8 +1178,10 @@ class TrackerClient(
         ) as response:
             if response.status == 404:
                 raise IssueNotFound(issue_id)
-            response.raise_for_status()
-            return ChecklistItemList.model_validate_json(await response.read()).root
+            if response.status >= 400:
+                await _raise_tracker_error(response)
+            raw = await response.read()
+        return self._extract_checklist_from_issue(raw)
 
     async def issue_delete_checklist_item(
         self,
@@ -1167,14 +1196,12 @@ class TrackerClient(
         ) as response:
             if response.status == 404:
                 raise IssueNotFound(issue_id)
-            response.raise_for_status()
-            data = await response.read()
-        if not data:
+            if response.status >= 400:
+                await _raise_tracker_error(response)
+            raw = await response.read()
+        if not raw:
             return None
-        try:
-            return ChecklistItemList.model_validate_json(data).root
-        except Exception:
-            return None
+        return self._extract_checklist_from_issue(raw)
 
     async def issue_clear_checklist(
         self,
@@ -1188,7 +1215,8 @@ class TrackerClient(
         ) as response:
             if response.status == 404:
                 raise IssueNotFound(issue_id)
-            response.raise_for_status()
+            if response.status >= 400:
+                await _raise_tracker_error(response)
 
     # --- attachments CRUD ---
     async def issue_upload_attachment(
@@ -1737,8 +1765,23 @@ class TrackerClient(
             json=body,
             params=params,
         ) as response:
-            response.raise_for_status()
-            return EntityList.model_validate_json(await response.read()).root
+            if response.status >= 400:
+                await _raise_tracker_error(response)
+            raw = await response.read()
+
+        # Yandex Tracker wraps entity search results in `{hits, pages, values: [...]}`
+        # when the collection is paginated, but may also return a bare list — accept both.
+        import json as _json
+
+        data = _json.loads(raw)
+        if isinstance(data, dict):
+            values = data.get("values", [])
+            if not isinstance(values, list):
+                values = []
+            return [v if isinstance(v, dict) else {} for v in values]
+        if isinstance(data, list):
+            return [v if isinstance(v, dict) else {} for v in data]
+        return []
 
     async def entity_get(
         self,
@@ -2239,13 +2282,18 @@ class TrackerClient(
 
     async def queue_workflow_get(
         self, queue_id: str, *, auth: YandexAuth | None = None
-    ) -> Workflow:
-        async with self._session.get(
-            f"v3/queues/{queue_id}/workflow",
-            headers=await self._build_headers(auth),
-        ) as response:
-            response.raise_for_status()
-            return Workflow.model_validate_json(await response.read())
+    ) -> Workflow | None:
+        # Tracker has no /v3/queues/<id>/workflow endpoint (404). Workflows are
+        # top-level entities exposed via GET /v3/workflows; we filter client-side
+        # by queue key/id.
+        workflows = await self.workflows_list(auth=auth)
+        for wf in workflows:
+            q = wf.queue or {}
+            if not isinstance(q, dict):
+                continue
+            if q.get("key") == queue_id or str(q.get("id") or "") == str(queue_id):
+                return wf
+        return None
 
     # --- bulk change ---
     async def bulk_update(

@@ -24,10 +24,11 @@ class TestGetGlobalFields:
         assert not result.isError
         mock_fields_protocol.get_global_fields.assert_called_once()
         content = get_tool_result_content(result)
-        assert isinstance(content, list)
-        assert len(content) == len(sample_global_fields)
-        assert content[0]["id"] == sample_global_fields[0].id
-        assert content[0]["name"] == sample_global_fields[0].name
+        assert isinstance(content, dict)
+        items = content["fields"]
+        assert len(items) == len(sample_global_fields)
+        assert items[0]["id"] == sample_global_fields[0].id
+        assert items[0]["name"] == sample_global_fields[0].name
 
 
 class TestGetStatuses:
@@ -44,10 +45,11 @@ class TestGetStatuses:
         assert not result.isError
         mock_fields_protocol.get_statuses.assert_called_once()
         content = get_tool_result_content(result)
-        assert isinstance(content, list)
-        assert len(content) == len(sample_statuses)
-        assert content[0]["key"] == sample_statuses[0].key
-        assert content[0]["name"] == sample_statuses[0].name
+        assert isinstance(content, dict)
+        items = content["statuses"]
+        assert len(items) == len(sample_statuses)
+        assert items[0]["key"] == sample_statuses[0].key
+        assert items[0]["name"] == sample_statuses[0].name
 
 
 class TestGetIssueTypes:
@@ -64,10 +66,11 @@ class TestGetIssueTypes:
         assert not result.isError
         mock_fields_protocol.get_issue_types.assert_called_once()
         content = get_tool_result_content(result)
-        assert isinstance(content, list)
-        assert len(content) == len(sample_issue_types)
-        assert content[0]["key"] == sample_issue_types[0].key
-        assert content[0]["name"] == sample_issue_types[0].name
+        assert isinstance(content, dict)
+        items = content["issue_types"]
+        assert len(items) == len(sample_issue_types)
+        assert items[0]["key"] == sample_issue_types[0].key
+        assert items[0]["name"] == sample_issue_types[0].name
 
 
 class TestGetPriorities:
@@ -84,10 +87,11 @@ class TestGetPriorities:
         assert not result.isError
         mock_fields_protocol.get_priorities.assert_called_once()
         content = get_tool_result_content(result)
-        assert isinstance(content, list)
-        assert len(content) == len(sample_priorities)
-        assert content[0]["key"] == sample_priorities[0].key
-        assert content[0]["name"] == sample_priorities[0].name
+        assert isinstance(content, dict)
+        items = content["priorities"]
+        assert len(items) == len(sample_priorities)
+        assert items[0]["key"] == sample_priorities[0].key
+        assert items[0]["name"] == sample_priorities[0].name
 
 
 class TestGetResolutions:
@@ -104,7 +108,8 @@ class TestGetResolutions:
         assert not result.isError
         mock_fields_protocol.get_resolutions.assert_called_once()
         content = get_tool_result_content(result)
-        assert isinstance(content, list)
-        assert len(content) == len(sample_resolutions)
-        assert content[0]["key"] == sample_resolutions[0].key
-        assert content[0]["name"] == sample_resolutions[0].name
+        assert isinstance(content, dict)
+        items = content["resolutions"]
+        assert len(items) == len(sample_resolutions)
+        assert items[0]["key"] == sample_resolutions[0].key
+        assert items[0]["name"] == sample_resolutions[0].name

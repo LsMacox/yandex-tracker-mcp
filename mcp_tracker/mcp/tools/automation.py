@@ -28,16 +28,18 @@ def register_automation_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
     # --- triggers read ---
     @mcp.tool(
         title="List Triggers",
-        description="List automation triggers of the queue.",
+        description="List automation triggers of the queue. "
+        "Returns a `{'triggers': [...]}` object.",
         annotations=ToolAnnotations(readOnlyHint=True),
     )
     async def triggers_list(
         ctx: Context[Any, AppContext], queue_id: QueueID
-    ) -> list[Trigger]:
+    ) -> dict[str, list[Trigger]]:
         check_queue_access(settings, queue_id)
-        return await ctx.request_context.lifespan_context.automations.triggers_list(
+        items = await ctx.request_context.lifespan_context.automations.triggers_list(
             queue_id, auth=get_yandex_auth(ctx)
         )
+        return {"triggers": items}
 
     @mcp.tool(
         title="Get Trigger",
@@ -57,16 +59,18 @@ def register_automation_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
     # --- autoactions read ---
     @mcp.tool(
         title="List Autoactions",
-        description="List scheduled autoactions of the queue.",
+        description="List scheduled autoactions of the queue. "
+        "Returns a `{'autoactions': [...]}` object.",
         annotations=ToolAnnotations(readOnlyHint=True),
     )
     async def autoactions_list(
         ctx: Context[Any, AppContext], queue_id: QueueID
-    ) -> list[Autoaction]:
+    ) -> dict[str, list[Autoaction]]:
         check_queue_access(settings, queue_id)
-        return await ctx.request_context.lifespan_context.automations.autoactions_list(
+        items = await ctx.request_context.lifespan_context.automations.autoactions_list(
             queue_id, auth=get_yandex_auth(ctx)
         )
+        return {"autoactions": items}
 
     @mcp.tool(
         title="Get Autoaction",
@@ -86,16 +90,17 @@ def register_automation_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
     # --- macros read ---
     @mcp.tool(
         title="List Macros",
-        description="List macros of the queue.",
+        description="List macros of the queue. Returns a `{'macros': [...]}` object.",
         annotations=ToolAnnotations(readOnlyHint=True),
     )
     async def macros_list(
         ctx: Context[Any, AppContext], queue_id: QueueID
-    ) -> list[Macro]:
+    ) -> dict[str, list[Macro]]:
         check_queue_access(settings, queue_id)
-        return await ctx.request_context.lifespan_context.automations.macros_list(
+        items = await ctx.request_context.lifespan_context.automations.macros_list(
             queue_id, auth=get_yandex_auth(ctx)
         )
+        return {"macros": items}
 
     @mcp.tool(
         title="Get Macro",
@@ -115,13 +120,17 @@ def register_automation_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
     # --- workflows read ---
     @mcp.tool(
         title="List Workflows",
-        description="List all workflows available in the organization.",
+        description="List all workflows available in the organization. "
+        "Returns a `{'workflows': [...]}` object.",
         annotations=ToolAnnotations(readOnlyHint=True),
     )
-    async def workflows_list(ctx: Context[Any, AppContext]) -> list[Workflow]:
-        return await ctx.request_context.lifespan_context.automations.workflows_list(
+    async def workflows_list(
+        ctx: Context[Any, AppContext],
+    ) -> dict[str, list[Workflow]]:
+        items = await ctx.request_context.lifespan_context.automations.workflows_list(
             auth=get_yandex_auth(ctx)
         )
+        return {"workflows": items}
 
     @mcp.tool(
         title="Get Queue Workflow",
@@ -131,7 +140,7 @@ def register_automation_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
     )
     async def queue_workflow_get(
         ctx: Context[Any, AppContext], queue_id: QueueID
-    ) -> Workflow:
+    ) -> Workflow | None:
         check_queue_access(settings, queue_id)
         return (
             await ctx.request_context.lifespan_context.automations.queue_workflow_get(

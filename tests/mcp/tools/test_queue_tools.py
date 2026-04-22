@@ -22,10 +22,11 @@ class TestQueuesGetAll:
         assert not result.isError
         mock_queues_protocol.queues_list.assert_called()
         content = get_tool_result_content(result)
-        assert isinstance(content, list)
-        assert len(content) == len(sample_queues)
-        assert content[0]["key"] == sample_queues[0].key
-        assert content[0]["name"] == sample_queues[0].name
+        assert isinstance(content, dict)
+        items = content["queues"]
+        assert len(items) == len(sample_queues)
+        assert items[0]["key"] == sample_queues[0].key
+        assert items[0]["name"] == sample_queues[0].name
 
     async def test_with_specific_page(
         self,
@@ -41,8 +42,8 @@ class TestQueuesGetAll:
 
         assert not result.isError
         content = get_tool_result_content(result)
-        assert isinstance(content, list)
-        assert len(content) == len(sample_queues)
+        assert isinstance(content, dict)
+        assert len(content["queues"]) == len(sample_queues)
 
     async def test_respects_queue_limits(
         self,
@@ -58,9 +59,9 @@ class TestQueuesGetAll:
 
         assert not result.isError
         content = get_tool_result_content(result)
-        assert isinstance(content, list)
+        assert isinstance(content, dict)
         # Only the ALLOWED queue should be returned
-        assert all(q["key"] == "ALLOWED" for q in content)
+        assert all(q["key"] == "ALLOWED" for q in content["queues"])
 
 
 class TestQueueGetTags:
@@ -110,9 +111,10 @@ class TestQueueGetVersions:
         assert not result.isError
         mock_queues_protocol.queues_get_versions.assert_called_once()
         content = get_tool_result_content(result)
-        assert isinstance(content, list)
-        assert len(content) == len(sample_queue_versions)
-        assert content[0]["name"] == sample_queue_versions[0].name
+        assert isinstance(content, dict)
+        items = content["versions"]
+        assert len(items) == len(sample_queue_versions)
+        assert items[0]["name"] == sample_queue_versions[0].name
 
     async def test_restricted_queue_raises_error(
         self,
@@ -146,10 +148,11 @@ class TestQueueGetFields:
         mock_queues_protocol.queues_get_fields.assert_called_once()
         mock_queues_protocol.queues_get_local_fields.assert_called_once()
         content = get_tool_result_content(result)
-        assert isinstance(content, list)
+        assert isinstance(content, dict)
+        items = content["fields"]
         # Should contain both global and local fields
         expected_count = len(sample_global_fields) + len(sample_local_fields)
-        assert len(content) == expected_count
+        assert len(items) == expected_count
 
     async def test_global_fields_only(
         self,
@@ -167,9 +170,10 @@ class TestQueueGetFields:
         mock_queues_protocol.queues_get_fields.assert_called_once()
         mock_queues_protocol.queues_get_local_fields.assert_not_called()
         content = get_tool_result_content(result)
-        assert isinstance(content, list)
-        assert len(content) == len(sample_global_fields)
-        assert content[0]["id"] == sample_global_fields[0].id
+        assert isinstance(content, dict)
+        items = content["fields"]
+        assert len(items) == len(sample_global_fields)
+        assert items[0]["id"] == sample_global_fields[0].id
 
     async def test_restricted_queue_raises_error(
         self,

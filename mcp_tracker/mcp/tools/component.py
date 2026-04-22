@@ -23,17 +23,19 @@ ComponentID = Annotated[
 def register_component_tools(_settings: Settings, mcp: FastMCP[Any]) -> None:
     @mcp.tool(
         title="List Components",
-        description="List queue components available in the organization.",
+        description="List queue components available in the organization. "
+        "Returns a `{'components': [...]}` object.",
         annotations=ToolAnnotations(readOnlyHint=True),
     )
     async def components_list(
         ctx: Context[Any, AppContext],
         page: PageParam = 1,
         per_page: PerPageParam = 50,
-    ) -> list[Component]:
-        return await ctx.request_context.lifespan_context.components.components_list(
+    ) -> dict[str, list[Component]]:
+        items = await ctx.request_context.lifespan_context.components.components_list(
             per_page=per_page, page=page, auth=get_yandex_auth(ctx)
         )
+        return {"components": items}
 
     @mcp.tool(
         title="Get Component",

@@ -19,17 +19,19 @@ DashboardID = Annotated[str, Field(description="Dashboard identifier")]
 def register_dashboard_tools(_settings: Settings, mcp: FastMCP[Any]) -> None:
     @mcp.tool(
         title="List Dashboards",
-        description="List dashboards accessible to the user.",
+        description="List dashboards accessible to the user. "
+        "Returns a `{'dashboards': [...]}` object.",
         annotations=ToolAnnotations(readOnlyHint=True),
     )
     async def dashboards_list(
         ctx: Context[Any, AppContext],
         page: PageParam = 1,
         per_page: PerPageParam = 50,
-    ) -> list[Dashboard]:
-        return await ctx.request_context.lifespan_context.dashboards.dashboards_list(
+    ) -> dict[str, list[Dashboard]]:
+        items = await ctx.request_context.lifespan_context.dashboards.dashboards_list(
             per_page=per_page, page=page, auth=get_yandex_auth(ctx)
         )
+        return {"dashboards": items}
 
     @mcp.tool(
         title="Get Dashboard",
@@ -45,17 +47,19 @@ def register_dashboard_tools(_settings: Settings, mcp: FastMCP[Any]) -> None:
 
     @mcp.tool(
         title="Get Dashboard Widgets",
-        description="Get all widgets of the dashboard.",
+        description="Get all widgets of the dashboard. "
+        "Returns a `{'widgets': [...]}` object.",
         annotations=ToolAnnotations(readOnlyHint=True),
     )
     async def dashboard_get_widgets(
         ctx: Context[Any, AppContext], dashboard_id: DashboardID
-    ) -> list[DashboardWidget]:
-        return (
+    ) -> dict[str, list[DashboardWidget]]:
+        items = (
             await ctx.request_context.lifespan_context.dashboards.dashboard_get_widgets(
                 dashboard_id, auth=get_yandex_auth(ctx)
             )
         )
+        return {"widgets": items}
 
 
 def register_dashboard_write_tools(_settings: Settings, mcp: FastMCP[Any]) -> None:
