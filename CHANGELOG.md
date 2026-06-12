@@ -2,6 +2,66 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.0] - 2026-06-12
+
+### Fixed — Yandex Tracker API conformance
+
+- `issue_move_to_queue`: the target queue is now sent as the `?queue=` query
+  parameter as the API requires (it was sent in the JSON body, which broke the
+  tool); the body is reserved for field edits during the move; added
+  `notify_author`.
+- `bulk(...)`: endpoints moved from `v2` to `v3`; `resolution` for
+  `action=transition` is now passed inside `values` per the API contract.
+- `issues_find`: `keys` combined with `query`/`filter` is folded into the YQL
+  expression (`Key: ...`) — the API forbids mixing `queue`/`keys`/`filter`/
+  `query` body parameters in one request.
+- `issue_get_transitions`: moved from `v2` to `v3`.
+- `issue_links(action=add)`: `relationship` is constrained to the 9 values the
+  API accepts; the fallback response parser picks the link pointing at the
+  target issue instead of the last list element; a 404 on
+  `action=delete` is no longer mislabeled as "issue not found".
+- `issue_update`: removed the implicit `version` pre-fetch — `version` is
+  optional optimistic locking, and the cached pre-fetch caused spurious 409
+  conflicts on repeated updates.
+- Structured-filter → YQL conversion: magic values are scoped per field family,
+  so `{status: "resolved"}` stays a literal instead of becoming `notEmpty()`
+  (which matched every issue); same for date/user function collisions.
+
+### Added
+
+- `queues(action=create)`: new `issue_types_config` parameter (required by the
+  API to create a queue).
+- `issues_find` response now includes `total_count` / `total_pages` parsed from
+  the API pagination headers.
+- `issue_create`: `type` accepts string keys (e.g. `bug`); `parent` and
+  `sprint` are exposed as tool parameters.
+- GET requests retry on 429/502/503/504 with `Retry-After` support; new
+  `TRACKER_HTTP_TIMEOUT` (default 30s) and `TRACKER_GET_RETRIES` (default 2)
+  settings.
+- `users(action=search)` resolves logins via a direct `user_get` lookup before
+  scanning the organization.
+
+### Security
+
+- `TRACKER_LIMIT_QUEUES` is now enforced consistently: `bulk` actions check
+  every issue and the target queue, `issues_find`/`issues_count` force a
+  `Queue: <allowed>` constraint, and `issue_links(action=add)` checks the
+  target issue's queue.
+- Redis cache keys embed a SHA-256 fingerprint of the auth token instead of the
+  raw OAuth token.
+
+### Changed
+
+- Caching: write actions now invalidate the affected per-issue read caches
+  (comments, links on both ends, worklogs, checklist, attachments, issue,
+  transitions) for the writing identity.
+- `manifest.json`: the packaged tool list reflects the 1.0.0 consolidated
+  surface; `uv run` is pinned to Python 3.12 so `grpcio` always installs from a
+  prebuilt wheel (fixes >60s cold start and MCP init timeouts in Claude
+  Desktop under Python 3.14).
+- `per_page` is capped at 1000; `queues(action=list)` fetch-all mode pages by
+  100 internally.
+
 ## [1.0.0] - 2026-04-22
 
 ### Breaking Changes — Tool Consolidation (108 → 27)
