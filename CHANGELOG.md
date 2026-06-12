@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.1] - 2026-06-12
+
+### Fixed
+
+- Transient connection failures on idempotent calls are now retried.
+  Long-idle MCP server processes hit stale keep-alive connections that the
+  Tracker load balancer already closed, which surfaced as
+  `Response payload is not completed: TransferEncodingError: 400, 'Not enough
+  data to satisfy transfer length header'` on `issues_find` and friends.
+  Retries now cover `ServerDisconnectedError` / `ClientOSError` on send and
+  `ClientPayloadError` on body read — for all GETs and the POST-based
+  search/count endpoints (`issues/_search`, `issues/_count`,
+  `filters/_search`, `entities/<type>/_search`, `dashboards/_search`).
+  Response bodies are buffered inside the retry loop so truncated reads are
+  retried instead of bubbling up to the tool caller.
+
 ## [1.1.0] - 2026-06-12
 
 ### Fixed — Yandex Tracker API conformance

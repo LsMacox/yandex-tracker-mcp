@@ -7,12 +7,19 @@ import time
 from asyncio import CancelledError
 from collections.abc import AsyncIterator
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import asynccontextmanager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any, Literal
 
 import jwt
 import yandexcloud
-from aiohttp import ClientSession, ClientTimeout, FormData
+from aiohttp import (
+    ClientOSError,
+    ClientPayloadError,
+    ClientSession,
+    ClientTimeout,
+    FormData,
+    ServerDisconnectedError,
+)
 from pydantic import BaseModel, RootModel
 from yandex.cloud.iam.v1.iam_token_service_pb2 import CreateIamTokenRequest
 from yandex.cloud.iam.v1.iam_token_service_pb2_grpc import IamTokenServiceStub
@@ -346,15 +353,32 @@ class TrackerClient(
         )
 
     @asynccontextmanager
-    async def _get(self, url: str, **kwargs: Any) -> AsyncIterator[Any]:
-        """GET with retries on transient statuses (429/502/503/504).
+    async def _request_idempotent(
+        self, method: str, url: str, **kwargs: Any
+    ) -> AsyncIterator[Any]:
+        """Issue an idempotent request with retries on transient failures.
 
-        Only GETs are retried — they are idempotent. Honors `Retry-After`
-        (seconds form) with a capped exponential backoff fallback.
+        Retries cover three failure classes (only safe for idempotent calls —
+        all GETs plus POST-based search/count endpoints):
+        - connection errors on send: a pooled keep-alive connection that the
+          Tracker LB already closed (`ServerDisconnectedError`, `ClientOSError`)
+        - truncated reads: `ClientPayloadError` ("Response payload is not
+          completed" / TransferEncodingError) — the body is buffered here via
+          `response.read()` so the error is caught inside the retry loop;
+          callers re-read from the cache
+        - retryable statuses 429/502/503/504, honoring `Retry-After`
         """
         attempt = 0
         while True:
-            response = await self._session.get(url, **kwargs)
+            try:
+                response = await self._session.request(method, url, **kwargs)
+            except (ServerDisconnectedError, ClientOSError, ClientPayloadError):
+                if attempt >= self._get_retries:
+                    raise
+                await asyncio.sleep(min(0.5 * (2**attempt), 10.0))
+                attempt += 1
+                continue
+
             if response.status in self._RETRY_STATUSES and attempt < self._get_retries:
                 retry_after = response.headers.get("Retry-After", "")
                 response.release()
@@ -364,11 +388,31 @@ class TrackerClient(
                 await asyncio.sleep(min(delay, 10.0))
                 attempt += 1
                 continue
+
+            try:
+                # Buffer the body so truncated keep-alive reads surface here,
+                # where they can be retried; aiohttp caches it for callers.
+                await response.read()
+            except ClientPayloadError:
+                response.release()
+                if attempt >= self._get_retries:
+                    raise
+                await asyncio.sleep(min(0.5 * (2**attempt), 10.0))
+                attempt += 1
+                continue
+
             try:
                 yield response
             finally:
                 response.release()
             return
+
+    def _get(self, url: str, **kwargs: Any) -> AbstractAsyncContextManager[Any]:
+        return self._request_idempotent("GET", url, **kwargs)
+
+    def _post_search(self, url: str, **kwargs: Any) -> AbstractAsyncContextManager[Any]:
+        """POST that is semantically a read (search/count) — safe to retry."""
+        return self._request_idempotent("POST", url, **kwargs)
 
     async def prepare(self):
         if self._service_account_store:
@@ -735,7 +779,7 @@ class TrackerClient(
             if order is not None:
                 body["order"] = order
 
-        async with self._session.post(
+        async with self._post_search(
             "v3/issues/_search",
             headers=await self._build_headers(auth),
             json=body,
@@ -927,7 +971,7 @@ class TrackerClient(
             "query": query,
         }
 
-        async with self._session.post(
+        async with self._post_search(
             "v3/issues/_count", headers=await self._build_headers(auth), json=body
         ) as response:
             if response.status >= 400:
@@ -1826,7 +1870,7 @@ class TrackerClient(
     ) -> list[IssueFilter]:
         # Yandex Tracker searches filters via POST /v3/filters/_search;
         # a bare GET /v3/filters returns 405.
-        async with self._session.post(
+        async with self._post_search(
             "v3/filters/_search",
             headers=await self._build_headers(auth),
             json={},
@@ -2031,7 +2075,7 @@ class TrackerClient(
         if expand:
             params["expand"] = ",".join(expand)
 
-        async with self._session.post(
+        async with self._post_search(
             f"v3/entities/{entity_type}/_search",
             headers=await self._build_headers(auth),
             json=body,
@@ -2216,7 +2260,7 @@ class TrackerClient(
         # Yandex Tracker searches dashboards via POST /v3/dashboards/_search.
         # A plain GET /v3/dashboards returns 405.
         params = {"perPage": per_page, "page": page}
-        async with self._session.post(
+        async with self._post_search(
             "v3/dashboards/_search",
             headers=await self._build_headers(auth),
             json={},
