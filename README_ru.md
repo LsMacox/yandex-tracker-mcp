@@ -871,6 +871,8 @@ TRACKER_ORG_ID=ваш_org_id                # Для организаций Ян
 
 # Конфигурация API (опционально)
 TRACKER_API_BASE_URL=https://api.tracker.yandex.net  # По умолчанию: https://api.tracker.yandex.net
+TRACKER_HTTP_TIMEOUT=30                   # По умолчанию: 30с на запрос (увеличьте для больших вложений)
+TRACKER_GET_RETRIES=2                     # По умолчанию: 2 повтора GET при 429/502/503/504
 
 # Безопасность - Ограничить доступ к конкретным очередям (опционально)
 TRACKER_LIMIT_QUEUES=PROJ1,PROJ2,DEV      # Ключи очередей через запятую

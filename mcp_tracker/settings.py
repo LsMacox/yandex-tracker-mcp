@@ -17,6 +17,11 @@ class Settings(BaseSettings):
     port: int = 8000
     transport: Literal["stdio", "sse", "streamable-http"] = "stdio"
     tracker_api_base_url: str = "https://api.tracker.yandex.net"
+    # Total HTTP timeout (seconds) for Tracker API calls. Large attachment
+    # uploads/downloads need more than the old 10s default.
+    tracker_http_timeout: float = 30.0
+    # How many times to retry idempotent GETs on 429/502/503/504.
+    tracker_get_retries: int = 2
     tracker_token: str | None = None
     tracker_iam_token: str | None = None
     tracker_cloud_org_id: str | None = None

@@ -1,4 +1,5 @@
 import datetime
+import hashlib
 from dataclasses import dataclass
 from typing import Any
 
@@ -34,6 +35,7 @@ from mcp_tracker.tracker.proto.types.issues import (
     IssueAttachment,
     IssueComment,
     IssueLink,
+    IssueSearchPage,
     IssueTransition,
     Worklog,
 )
@@ -64,6 +66,39 @@ from mcp_tracker.tracker.proto.types.users import User
 from mcp_tracker.tracker.proto.users import UsersProtocolWrap
 
 
+def _auth_fingerprint(auth: YandexAuth | None) -> str:
+    """Stable per-identity cache-key fragment.
+
+    Tokens are hashed so raw OAuth credentials never end up inside Redis keys
+    (they are visible via KEYS/MONITOR and persist in RDB/AOF dumps).
+    """
+    if auth is None:
+        return "-"
+    token_part = (
+        hashlib.sha256(auth.token.encode()).hexdigest()[:16] if auth.token else "-"
+    )
+    return f"{token_part}:{auth.org_id or '-'}:{auth.cloud_org_id or '-'}"
+
+
+def _build_key(name: str, *args: Any, **kwargs: Any) -> str:
+    """Deterministic cache key shared by the @cached decorator and invalidation.
+
+    `auth` is always folded in (defaulting to the anonymous fingerprint) so an
+    omitted kwarg and an explicit `auth=None` yield the same key.
+    """
+    rest = dict(kwargs)
+    auth = rest.pop("auth", None)
+    parts: list[str] = [name]
+    parts.extend(repr(a) for a in args)
+    parts.extend(f"{k}={rest[k]!r}" for k in sorted(rest))
+    parts.append(f"auth={_auth_fingerprint(auth)}")
+    return "|".join(parts)
+
+
+def _key_builder(f: Any, _self: Any, *args: Any, **kwargs: Any) -> str:
+    return _build_key(f.__name__, *args, **kwargs)
+
+
 @dataclass
 class CacheCollection:
     queues: type[QueuesProtocolWrap]
@@ -82,6 +117,26 @@ class CacheCollection:
 def make_cached_protocols(
     cache_config: dict[str, Any],
 ) -> CacheCollection:
+    # Hash auth tokens out of cache keys and make keys deterministic so write
+    # methods can invalidate the corresponding read entries.
+    cache_config = {**cache_config, "key_builder": _key_builder}
+
+    class _InvalidatingWrapMixin:
+        async def _invalidate(self, name: str, *args: Any, **kwargs: Any) -> None:
+            """Best-effort delete of a cached read entry after a write.
+
+            Only the current identity's entry is dropped — in OAuth mode other
+            users' entries live until the TTL expires.
+            """
+            method = getattr(self, name, None)
+            cache = getattr(method, "cache", None)
+            if cache is None:
+                return
+            try:
+                await cache.delete(_build_key(name, *args, **kwargs))
+            except Exception:  # noqa: BLE001 — cache failures must not break writes
+                pass
+
     class CachingQueuesProtocol(QueuesProtocolWrap):
         @cached(**cache_config)
         async def queues_list(
@@ -133,6 +188,7 @@ def make_cached_protocols(
             lead: str,
             default_type: str,
             default_priority: str,
+            issue_types_config: list[dict[str, Any]] | None = None,
             extra: dict[str, Any] | None = None,
             auth: YandexAuth | None = None,
         ) -> Queue:
@@ -142,11 +198,12 @@ def make_cached_protocols(
                 lead=lead,
                 default_type=default_type,
                 default_priority=default_priority,
+                issue_types_config=issue_types_config,
                 extra=extra,
                 auth=auth,
             )
 
-    class CachingIssuesProtocol(IssueProtocolWrap):
+    class CachingIssuesProtocol(_InvalidatingWrapMixin, IssueProtocolWrap):
         @cached(**cache_config)
         async def issue_get(
             self, issue_id: str, *, auth: YandexAuth | None = None
@@ -176,7 +233,7 @@ def make_cached_protocols(
             is_add_to_followers: bool = True,
             auth: YandexAuth | None = None,
         ) -> IssueComment:
-            return await self._original.issue_add_comment(
+            result = await self._original.issue_add_comment(
                 issue_id,
                 text=text,
                 summonees=summonees,
@@ -185,6 +242,8 @@ def make_cached_protocols(
                 is_add_to_followers=is_add_to_followers,
                 auth=auth,
             )
+            await self._invalidate("issue_get_comments", issue_id, auth=auth)
+            return result
 
         async def issue_update_comment(
             self,
@@ -197,7 +256,7 @@ def make_cached_protocols(
             markup_type: str | None = None,
             auth: YandexAuth | None = None,
         ) -> IssueComment:
-            return await self._original.issue_update_comment(
+            result = await self._original.issue_update_comment(
                 issue_id,
                 comment_id,
                 text=text,
@@ -206,6 +265,8 @@ def make_cached_protocols(
                 markup_type=markup_type,
                 auth=auth,
             )
+            await self._invalidate("issue_get_comments", issue_id, auth=auth)
+            return result
 
         async def issue_delete_comment(
             self,
@@ -214,9 +275,8 @@ def make_cached_protocols(
             *,
             auth: YandexAuth | None = None,
         ) -> None:
-            return await self._original.issue_delete_comment(
-                issue_id, comment_id, auth=auth
-            )
+            await self._original.issue_delete_comment(issue_id, comment_id, auth=auth)
+            await self._invalidate("issue_get_comments", issue_id, auth=auth)
 
         @cached(**cache_config)
         async def issues_find(
@@ -229,7 +289,7 @@ def make_cached_protocols(
             per_page: int = 15,
             page: int = 1,
             auth: YandexAuth | None = None,
-        ) -> list[Issue]:
+        ) -> IssueSearchPage:
             return await self._original.issues_find(
                 query=query,
                 filter=filter,
@@ -255,13 +315,15 @@ def make_cached_protocols(
             start: datetime.datetime | None = None,
             auth: YandexAuth | None = None,
         ) -> Worklog:
-            return await self._original.issue_add_worklog(
+            result = await self._original.issue_add_worklog(
                 issue_id,
                 duration=duration,
                 comment=comment,
                 start=start,
                 auth=auth,
             )
+            await self._invalidate("issue_get_worklogs", issue_id, auth=auth)
+            return result
 
         async def issue_update_worklog(
             self,
@@ -273,7 +335,7 @@ def make_cached_protocols(
             start: datetime.datetime | None = None,
             auth: YandexAuth | None = None,
         ) -> Worklog:
-            return await self._original.issue_update_worklog(
+            result = await self._original.issue_update_worklog(
                 issue_id,
                 worklog_id,
                 duration=duration,
@@ -281,6 +343,8 @@ def make_cached_protocols(
                 start=start,
                 auth=auth,
             )
+            await self._invalidate("issue_get_worklogs", issue_id, auth=auth)
+            return result
 
         async def issue_delete_worklog(
             self,
@@ -289,11 +353,12 @@ def make_cached_protocols(
             *,
             auth: YandexAuth | None = None,
         ) -> None:
-            return await self._original.issue_delete_worklog(
+            await self._original.issue_delete_worklog(
                 issue_id,
                 worklog_id,
                 auth=auth,
             )
+            await self._invalidate("issue_get_worklogs", issue_id, auth=auth)
 
         @cached(**cache_config)
         async def issue_get_attachments(
@@ -318,7 +383,7 @@ def make_cached_protocols(
             queue: str,
             summary: str,
             *,
-            type: int | None = None,
+            type: int | str | None = None,
             description: str | None = None,
             assignee: str | int | None = None,
             priority: str | None = None,
@@ -355,13 +420,16 @@ def make_cached_protocols(
             fields: dict[str, Any] | None = None,
             auth: YandexAuth | None = None,
         ) -> list[IssueTransition]:
-            return await self._original.issue_execute_transition(
+            result = await self._original.issue_execute_transition(
                 issue_id,
                 transition_id,
                 comment=comment,
                 fields=fields,
                 auth=auth,
             )
+            await self._invalidate("issue_get", issue_id, auth=auth)
+            await self._invalidate("issue_get_transitions", issue_id, auth=auth)
+            return result
 
         async def issue_close(
             self,
@@ -372,13 +440,16 @@ def make_cached_protocols(
             fields: dict[str, Any] | None = None,
             auth: YandexAuth | None = None,
         ) -> list[IssueTransition]:
-            return await self._original.issue_close(
+            result = await self._original.issue_close(
                 issue_id,
                 resolution_id,
                 comment=comment,
                 fields=fields,
                 auth=auth,
             )
+            await self._invalidate("issue_get", issue_id, auth=auth)
+            await self._invalidate("issue_get_transitions", issue_id, auth=auth)
+            return result
 
         async def issue_update(
             self,
@@ -400,7 +471,7 @@ def make_cached_protocols(
             auth: YandexAuth | None = None,
             **kwargs: Any,
         ) -> Issue:
-            return await self._original.issue_update(
+            result = await self._original.issue_update(
                 issue_id,
                 summary=summary,
                 description=description,
@@ -418,6 +489,9 @@ def make_cached_protocols(
                 auth=auth,
                 **kwargs,
             )
+            await self._invalidate("issue_get", issue_id, auth=auth)
+            await self._invalidate("issue_get_transitions", issue_id, auth=auth)
+            return result
 
         async def issue_add_link(
             self,
@@ -427,12 +501,16 @@ def make_cached_protocols(
             target_issue: str,
             auth: YandexAuth | None = None,
         ) -> IssueLink:
-            return await self._original.issue_add_link(
+            result = await self._original.issue_add_link(
                 issue_id,
                 relationship=relationship,
                 target_issue=target_issue,
                 auth=auth,
             )
+            # A link is visible from both ends.
+            await self._invalidate("issues_get_links", issue_id, auth=auth)
+            await self._invalidate("issues_get_links", target_issue, auth=auth)
+            return result
 
         async def issue_delete_link(
             self,
@@ -441,7 +519,8 @@ def make_cached_protocols(
             *,
             auth: YandexAuth | None = None,
         ) -> None:
-            return await self._original.issue_delete_link(issue_id, link_id, auth=auth)
+            await self._original.issue_delete_link(issue_id, link_id, auth=auth)
+            await self._invalidate("issues_get_links", issue_id, auth=auth)
 
         async def issue_add_checklist_item(
             self,
@@ -453,7 +532,7 @@ def make_cached_protocols(
             deadline: dict[str, Any] | None = None,
             auth: YandexAuth | None = None,
         ) -> list[ChecklistItem]:
-            return await self._original.issue_add_checklist_item(
+            result = await self._original.issue_add_checklist_item(
                 issue_id,
                 text=text,
                 checked=checked,
@@ -461,6 +540,8 @@ def make_cached_protocols(
                 deadline=deadline,
                 auth=auth,
             )
+            await self._invalidate("issue_get_checklist", issue_id, auth=auth)
+            return result
 
         async def issue_update_checklist_item(
             self,
@@ -473,7 +554,7 @@ def make_cached_protocols(
             deadline: dict[str, Any] | None = None,
             auth: YandexAuth | None = None,
         ) -> list[ChecklistItem]:
-            return await self._original.issue_update_checklist_item(
+            result = await self._original.issue_update_checklist_item(
                 issue_id,
                 item_id,
                 text=text,
@@ -482,6 +563,8 @@ def make_cached_protocols(
                 deadline=deadline,
                 auth=auth,
             )
+            await self._invalidate("issue_get_checklist", issue_id, auth=auth)
+            return result
 
         async def issue_delete_checklist_item(
             self,
@@ -490,9 +573,11 @@ def make_cached_protocols(
             *,
             auth: YandexAuth | None = None,
         ) -> list[ChecklistItem] | None:
-            return await self._original.issue_delete_checklist_item(
+            result = await self._original.issue_delete_checklist_item(
                 issue_id, item_id, auth=auth
             )
+            await self._invalidate("issue_get_checklist", issue_id, auth=auth)
+            return result
 
         async def issue_clear_checklist(
             self,
@@ -500,7 +585,8 @@ def make_cached_protocols(
             *,
             auth: YandexAuth | None = None,
         ) -> None:
-            return await self._original.issue_clear_checklist(issue_id, auth=auth)
+            await self._original.issue_clear_checklist(issue_id, auth=auth)
+            await self._invalidate("issue_get_checklist", issue_id, auth=auth)
 
         async def issue_upload_attachment(
             self,
@@ -511,13 +597,15 @@ def make_cached_protocols(
             filename: str | None = None,
             auth: YandexAuth | None = None,
         ) -> IssueAttachment:
-            return await self._original.issue_upload_attachment(
+            result = await self._original.issue_upload_attachment(
                 issue_id,
                 file_path=file_path,
                 content_base64=content_base64,
                 filename=filename,
                 auth=auth,
             )
+            await self._invalidate("issue_get_attachments", issue_id, auth=auth)
+            return result
 
         async def issue_delete_attachment(
             self,
@@ -526,9 +614,10 @@ def make_cached_protocols(
             *,
             auth: YandexAuth | None = None,
         ) -> None:
-            return await self._original.issue_delete_attachment(
+            await self._original.issue_delete_attachment(
                 issue_id, attachment_id, auth=auth
             )
+            await self._invalidate("issue_get_attachments", issue_id, auth=auth)
 
         async def issue_download_attachment(
             self,
@@ -556,7 +645,9 @@ def make_cached_protocols(
             *,
             auth: YandexAuth | None = None,
         ) -> Issue:
-            return await self._original.issue_add_tags(issue_id, tags, auth=auth)
+            result = await self._original.issue_add_tags(issue_id, tags, auth=auth)
+            await self._invalidate("issue_get", issue_id, auth=auth)
+            return result
 
         async def issue_remove_tags(
             self,
@@ -565,7 +656,9 @@ def make_cached_protocols(
             *,
             auth: YandexAuth | None = None,
         ) -> Issue:
-            return await self._original.issue_remove_tags(issue_id, tags, auth=auth)
+            result = await self._original.issue_remove_tags(issue_id, tags, auth=auth)
+            await self._invalidate("issue_get", issue_id, auth=auth)
+            return result
 
         async def issue_move_to_queue(
             self,
@@ -576,19 +669,24 @@ def make_cached_protocols(
             initial_status: bool | None = None,
             expand: list[str] | None = None,
             notify: bool | None = None,
+            notify_author: bool | None = None,
             extra: dict[str, Any] | None = None,
             auth: YandexAuth | None = None,
         ) -> Issue:
-            return await self._original.issue_move_to_queue(
+            result = await self._original.issue_move_to_queue(
                 issue_id,
                 queue,
                 move_all_fields=move_all_fields,
                 initial_status=initial_status,
                 expand=expand,
                 notify=notify,
+                notify_author=notify_author,
                 extra=extra,
                 auth=auth,
             )
+            await self._invalidate("issue_get", issue_id, auth=auth)
+            await self._invalidate("issue_get_transitions", issue_id, auth=auth)
+            return result
 
     class CachingGlobalDataProtocol(GlobalDataProtocolWrap):
         @cached(**cache_config)

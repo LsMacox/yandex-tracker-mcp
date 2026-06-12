@@ -874,6 +874,8 @@ TRACKER_ORG_ID=your_org_id                # For Yandex 360 organizations
 
 # API Configuration (optional)
 TRACKER_API_BASE_URL=https://api.tracker.yandex.net  # Default: https://api.tracker.yandex.net
+TRACKER_HTTP_TIMEOUT=30                   # Default: 30s total per request (raise for large attachments)
+TRACKER_GET_RETRIES=2                     # Default: 2 retries for GETs on 429/502/503/504
 
 # Security - Restrict access to specific queues (optional)
 TRACKER_LIMIT_QUEUES=PROJ1,PROJ2,DEV      # Comma-separated queue keys

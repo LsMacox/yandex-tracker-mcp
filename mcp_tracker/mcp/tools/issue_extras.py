@@ -34,8 +34,15 @@ def register_issue_extras_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
             bool | None, Field(description="Set target queue initial status")
         ] = None,
         notify: Annotated[bool | None, Field(description="Send notifications")] = None,
+        notify_author: Annotated[
+            bool | None, Field(description="Notify the issue author")
+        ] = None,
         expand: Annotated[
-            list[str] | None, Field(description="Expand fields in response")
+            list[str] | None,
+            Field(
+                description="Expand fields in response "
+                "(attachments/comments/workflow/transitions)"
+            ),
         ] = None,
         extra: Annotated[
             dict[str, Any] | None,
@@ -51,6 +58,7 @@ def register_issue_extras_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
             initial_status=initial_status,
             expand=expand,
             notify=notify,
+            notify_author=notify_author,
             extra=extra,
             auth=get_yandex_auth(ctx),
         )

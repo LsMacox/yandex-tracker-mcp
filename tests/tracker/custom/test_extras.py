@@ -27,6 +27,7 @@ from mcp_tracker.tracker.proto.types.misc import (
     Trigger,
     Workflow,
 )
+from tests.aioresponses_utils import RequestCapture
 
 
 class TestFilters:
@@ -211,7 +212,7 @@ class TestBulkChange:
     async def test_bulk_update(self, tracker_client: TrackerClient) -> None:
         with aioresponses() as m:
             m.post(
-                "https://api.tracker.yandex.net/v2/bulkchange/_update",
+                "https://api.tracker.yandex.net/v3/bulkchange/_update",
                 payload={"id": "op1", "status": "CREATED"},
             )
             result = await tracker_client.bulk_update(
@@ -223,7 +224,7 @@ class TestBulkChange:
     async def test_bulk_move(self, tracker_client: TrackerClient) -> None:
         with aioresponses() as m:
             m.post(
-                "https://api.tracker.yandex.net/v2/bulkchange/_move",
+                "https://api.tracker.yandex.net/v3/bulkchange/_move",
                 payload={"id": "op2", "status": "IN_PROGRESS"},
             )
             result = await tracker_client.bulk_move(issues=["TEST-1"], queue="DEV")
@@ -232,13 +233,35 @@ class TestBulkChange:
     async def test_bulk_transition(self, tracker_client: TrackerClient) -> None:
         with aioresponses() as m:
             m.post(
-                "https://api.tracker.yandex.net/v2/bulkchange/_transition",
+                "https://api.tracker.yandex.net/v3/bulkchange/_transition",
                 payload={"id": "op3", "status": "COMPLETED"},
             )
             result = await tracker_client.bulk_transition(
                 issues=["TEST-1"], transition="close"
             )
         assert result.id == "op3"
+
+    async def test_bulk_transition_resolution_goes_into_values(
+        self, tracker_client: TrackerClient
+    ) -> None:
+        capture = RequestCapture(payload={"id": "op4", "status": "CREATED"})
+        with aioresponses() as m:
+            m.post(
+                "https://api.tracker.yandex.net/v3/bulkchange/_transition",
+                callback=capture.callback,
+            )
+            await tracker_client.bulk_transition(
+                issues=["TEST-1"],
+                transition="close",
+                resolution="fixed",
+                fields={"assignee": "user1"},
+            )
+        request = capture.last_request
+        request.assert_json_field(
+            "values", {"assignee": "user1", "resolution": "fixed"}
+        )
+        body = request.get_json_body()
+        assert "resolution" not in body  # must not leak to the top level
 
 
 class TestIssueExtras:
@@ -301,13 +324,40 @@ class TestIssueExtras:
     async def test_issue_move_to_queue(
         self, tracker_client: TrackerClient, sample_issue_payload: dict[str, Any]
     ) -> None:
+        # The target queue must travel as the `queue` query parameter; the JSON
+        # body is reserved for issue fields changed during the move.
+        capture = RequestCapture(payload={**sample_issue_payload, "key": "DEV-1"})
         with aioresponses() as m:
             m.post(
-                "https://api.tracker.yandex.net/v3/issues/TEST-1/_move",
-                payload={**sample_issue_payload, "key": "DEV-1"},
+                "https://api.tracker.yandex.net/v3/issues/TEST-1/_move?queue=DEV",
+                callback=capture.callback,
             )
             result = await tracker_client.issue_move_to_queue("TEST-1", "DEV")
         assert result.key == "DEV-1"
+        assert capture.last_request.get_json_body() == {}
+
+    async def test_issue_move_to_queue_with_options(
+        self, tracker_client: TrackerClient, sample_issue_payload: dict[str, Any]
+    ) -> None:
+        capture = RequestCapture(payload={**sample_issue_payload, "key": "DEV-1"})
+        with aioresponses() as m:
+            m.post(
+                "https://api.tracker.yandex.net/v3/issues/TEST-1/_move"
+                "?queue=DEV&moveAllFields=true&initialStatus=true"
+                "&notify=false&notifyAuthor=true",
+                callback=capture.callback,
+            )
+            result = await tracker_client.issue_move_to_queue(
+                "TEST-1",
+                "DEV",
+                move_all_fields=True,
+                initial_status=True,
+                notify=False,
+                notify_author=True,
+                extra={"summary": "Moved"},
+            )
+        assert result.key == "DEV-1"
+        capture.last_request.assert_json_field("summary", "Moved")
 
     async def test_issue_upload_attachment(self, tracker_client: TrackerClient) -> None:
         with tempfile.NamedTemporaryFile("w", delete=False, suffix=".txt") as fh:

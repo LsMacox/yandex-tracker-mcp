@@ -102,7 +102,9 @@ def register_issue_read_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
             "Type: `task, bug, feature, improvement, incident, epic`.\n"
             "Priority: `trivial, minor, normal, critical, blocker`.\n"
             "Resolution: `fixed, wontFix, cantReproduce, duplicate, later, dontDo`.\n\n"
-            "To restrict to specific issue keys use `keys`."
+            "To restrict to specific issue keys use `keys`.\n"
+            "Response includes `total_count`/`total_pages` when the API reports "
+            "them — use these instead of paging blindly."
         ),
         annotations=ToolAnnotations(readOnlyHint=True),
     )
@@ -145,7 +147,7 @@ def register_issue_read_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
         ] = None,
         page: PageParam = 1,
         per_page: PerPageParam = 25,
-    ) -> dict[str, list[Issue]]:
+    ) -> dict[str, Any]:
         if query is None and filter is None and not keys:
             raise ValueError(
                 "Provide at least one of: query, filter, or keys — "
@@ -164,7 +166,17 @@ def register_issue_read_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
                 raise ValueError(f"Invalid filter: {e}") from e
             effective_query = f"({query}) AND ({converted})" if query else converted
 
-        issues = await ctx.request_context.lifespan_context.issues.issues_find(
+        # TRACKER_LIMIT_QUEUES is an access boundary — constrain every search
+        # to the allowed queues instead of trusting the caller's query.
+        if settings.tracker_limit_queues:
+            allowed = ", ".join(f'"{q}"' for q in settings.tracker_limit_queues)
+            effective_query = (
+                f"Queue: {allowed} AND ({effective_query})"
+                if effective_query
+                else f"Queue: {allowed}"
+            )
+
+        result = await ctx.request_context.lifespan_context.issues.issues_find(
             query=effective_query,
             filter=None,
             order=order,
@@ -173,6 +185,7 @@ def register_issue_read_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
             page=page,
             auth=get_yandex_auth(ctx),
         )
+        issues = result.issues
 
         if not include_description:
             for issue in issues:
@@ -185,7 +198,12 @@ def register_issue_read_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
             for issue in issues:
                 strip_extra_fields(issue, settings.tracker_hide_issue_fields)
 
-        return {"issues": issues}
+        response: dict[str, Any] = {"issues": issues}
+        if result.total_count is not None:
+            response["total_count"] = result.total_count
+        if result.total_pages is not None:
+            response["total_pages"] = result.total_pages
+        return response
 
     @mcp.tool(
         title="Count Issues",
@@ -199,6 +217,9 @@ def register_issue_read_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
         ctx: Context[Any, AppContext],
         query: YTQuery,
     ) -> int:
+        if settings.tracker_limit_queues:
+            allowed = ", ".join(f'"{q}"' for q in settings.tracker_limit_queues)
+            query = f"Queue: {allowed} AND ({query})"
         return await ctx.request_context.lifespan_context.issues.issues_count(
             query,
             auth=get_yandex_auth(ctx),

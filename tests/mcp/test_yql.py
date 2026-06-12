@@ -7,7 +7,6 @@ import pytest
 from mcp_tracker.mcp.yql import (
     FilterConversionError,
     filter_to_yql,
-    order_to_sort_by,
 )
 
 
@@ -40,16 +39,48 @@ class TestMagicValues:
         [
             ("empty", "empty()"),
             ("notEmpty", "notEmpty()"),
-            ("me", "me()"),
-            ("today", "today()"),
-            ("yesterday", "yesterday()"),
-            ("now", "now()"),
             ("resolved", "notEmpty()"),
             ("unresolved", "empty()"),
         ],
     )
-    def test_magic(self, raw: str, rendered: str) -> None:
+    def test_resolution_magic(self, raw: str, rendered: str) -> None:
         assert filter_to_yql({"resolution": raw}) == f"Resolution: {rendered}"
+
+    @pytest.mark.parametrize(
+        "field,raw,rendered",
+        [
+            ("assignee", "me", "me()"),
+            ("author", "me", "me()"),
+            ("created", "today", "today()"),
+            ("updated", "yesterday", "yesterday()"),
+            ("resolved", "now", "now()"),
+            ("created", "week", "week()"),
+        ],
+    )
+    def test_field_scoped_magic(self, field: str, raw: str, rendered: str) -> None:
+        yql_field = filter_to_yql({field: raw}).split(":")[0]
+        assert filter_to_yql({field: raw}) == f"{yql_field}: {rendered}"
+
+    @pytest.mark.parametrize(
+        "filter_dict,expected",
+        [
+            # `resolved` is a legit status key — must stay a literal.
+            ({"status": "resolved"}, "Status: resolved"),
+            ({"status": ["open", "resolved"]}, "Status: open, resolved"),
+            # Date functions must not hijack values of non-date fields.
+            ({"tags": "today"}, "Tags: today"),
+            ({"summary": "week"}, "Summary: week"),
+            # `me` only applies to user fields.
+            ({"summary": "me"}, "Summary: me"),
+        ],
+    )
+    def test_magic_does_not_hijack_literals(
+        self, filter_dict: dict[str, Any], expected: str
+    ) -> None:
+        assert filter_to_yql(filter_dict) == expected
+
+    def test_generic_empty_applies_to_any_field(self) -> None:
+        assert filter_to_yql({"tags": "empty"}) == "Tags: empty()"
 
 
 class TestLists:
@@ -108,16 +139,3 @@ class TestCombined:
     def test_custom_field_passes_through(self) -> None:
         # Unknown key → used as-is (local/custom fields already use their id).
         assert filter_to_yql({"customField123": "foo"}) == "customField123: foo"
-
-
-class TestOrderToSortBy:
-    def test_asc_and_desc(self) -> None:
-        assert order_to_sort_by(["-updated", "+priority"]) == (
-            '"Sort By": Updated DESC, Priority ASC'
-        )
-
-    def test_empty(self) -> None:
-        assert order_to_sort_by([]) == ""
-
-    def test_default_ascending(self) -> None:
-        assert order_to_sort_by(["created"]) == '"Sort By": Created ASC'

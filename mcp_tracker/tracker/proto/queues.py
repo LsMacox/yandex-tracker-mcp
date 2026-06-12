@@ -43,6 +43,7 @@ class QueuesProtocol(Protocol):
         lead: str,
         default_type: str,
         default_priority: str,
+        issue_types_config: list[dict[str, Any]] | None = None,
         extra: dict[str, Any] | None = None,
         auth: YandexAuth | None = None,
     ) -> Queue: ...

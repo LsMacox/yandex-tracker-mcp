@@ -114,3 +114,72 @@ class TestBulkReadOnly:
         )
         assert result.isError
         mock_bulkchange_protocol.bulk_update.assert_not_called()
+
+
+class TestBulkQueueRestrictions:
+    async def test_update_with_restricted_issue_blocked(
+        self,
+        client_session_with_limits: ClientSession,
+        mock_bulkchange_protocol: AsyncMock,
+    ) -> None:
+        result = await client_session_with_limits.call_tool(
+            "bulk",
+            {
+                "action": "update",
+                "issues": ["ALLOWED-1", "RESTRICTED-1"],
+                "values": {"priority": "normal"},
+            },
+        )
+        assert result.isError
+        mock_bulkchange_protocol.bulk_update.assert_not_called()
+
+    async def test_move_to_restricted_queue_blocked(
+        self,
+        client_session_with_limits: ClientSession,
+        mock_bulkchange_protocol: AsyncMock,
+    ) -> None:
+        result = await client_session_with_limits.call_tool(
+            "bulk",
+            {
+                "action": "move",
+                "issues": ["ALLOWED-1"],
+                "queue": "RESTRICTED",
+            },
+        )
+        assert result.isError
+        mock_bulkchange_protocol.bulk_move.assert_not_called()
+
+    async def test_transition_with_restricted_issue_blocked(
+        self,
+        client_session_with_limits: ClientSession,
+        mock_bulkchange_protocol: AsyncMock,
+    ) -> None:
+        result = await client_session_with_limits.call_tool(
+            "bulk",
+            {
+                "action": "transition",
+                "issues": ["RESTRICTED-1"],
+                "transition": "close",
+            },
+        )
+        assert result.isError
+        mock_bulkchange_protocol.bulk_transition.assert_not_called()
+
+    async def test_update_with_allowed_issues_passes(
+        self,
+        client_session_with_limits: ClientSession,
+        mock_bulkchange_protocol: AsyncMock,
+        sample_bulk_result: BulkChangeResult,
+    ) -> None:
+        mock_bulkchange_protocol.bulk_update.return_value = sample_bulk_result
+
+        result = await client_session_with_limits.call_tool(
+            "bulk",
+            {
+                "action": "update",
+                "issues": ["ALLOWED-1", "PERMITTED-2"],
+                "values": {"priority": "normal"},
+            },
+        )
+        assert not result.isError
+        mock_bulkchange_protocol.bulk_update.assert_called_once()

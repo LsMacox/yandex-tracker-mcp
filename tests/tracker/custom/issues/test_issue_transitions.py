@@ -13,7 +13,7 @@ from tests.aioresponses_utils import RequestCapture
 @pytest.fixture
 def sample_transition_data() -> dict[str, Any]:
     return {
-        "self": "https://api.tracker.yandex.net/v2/issues/TEST-123/transitions/start",
+        "self": "https://api.tracker.yandex.net/v3/issues/TEST-123/transitions/start",
         "id": "start",
         "display": "Start Progress",
         "to": {
@@ -28,7 +28,7 @@ def sample_transition_data() -> dict[str, Any]:
 @pytest.fixture
 def sample_done_transition_data() -> dict[str, Any]:
     return {
-        "self": "https://api.tracker.yandex.net/v2/issues/TEST-123/transitions/close",
+        "self": "https://api.tracker.yandex.net/v3/issues/TEST-123/transitions/close",
         "id": "close",
         "display": "Close Issue",
         "to": {
@@ -81,7 +81,7 @@ class TestIssueGetTransitions:
 
         with aioresponses() as m:
             m.get(
-                "https://api.tracker.yandex.net/v2/issues/TEST-123/transitions",
+                "https://api.tracker.yandex.net/v3/issues/TEST-123/transitions",
                 payload=transitions_response,
             )
 
@@ -106,7 +106,7 @@ class TestIssueGetTransitions:
 
         with aioresponses() as m:
             m.get(
-                "https://api.tracker.yandex.net/v2/issues/TEST-123/transitions",
+                "https://api.tracker.yandex.net/v3/issues/TEST-123/transitions",
                 callback=capture.callback,
             )
 
@@ -128,7 +128,7 @@ class TestIssueGetTransitions:
     async def test_not_found(self, tracker_client: TrackerClient) -> None:
         with aioresponses() as m:
             m.get(
-                "https://api.tracker.yandex.net/v2/issues/NOTFOUND-123/transitions",
+                "https://api.tracker.yandex.net/v3/issues/NOTFOUND-123/transitions",
                 status=404,
             )
 
@@ -147,7 +147,7 @@ class TestIssueGetTransitions:
 
         with aioresponses() as m:
             m.get(
-                "https://api.tracker.yandex.net/v2/issues/TEST-123/transitions",
+                "https://api.tracker.yandex.net/v3/issues/TEST-123/transitions",
                 payload=transitions_response,
             )
 
@@ -288,7 +288,7 @@ class TestIssueClose:
 
         with aioresponses() as m:
             m.get(
-                "https://api.tracker.yandex.net/v2/issues/TEST-123/transitions",
+                "https://api.tracker.yandex.net/v3/issues/TEST-123/transitions",
                 payload=transitions_response,
             )
             m.get(
@@ -321,7 +321,7 @@ class TestIssueClose:
 
         with aioresponses() as m:
             m.get(
-                "https://api.tracker.yandex.net/v2/issues/TEST-123/transitions",
+                "https://api.tracker.yandex.net/v3/issues/TEST-123/transitions",
                 payload=transitions_response,
             )
             m.get(
@@ -358,7 +358,7 @@ class TestIssueClose:
 
         with aioresponses() as m:
             m.get(
-                "https://api.tracker.yandex.net/v2/issues/TEST-123/transitions",
+                "https://api.tracker.yandex.net/v3/issues/TEST-123/transitions",
                 payload=transitions_response,
             )
             m.get(
@@ -413,7 +413,7 @@ class TestIssueClose:
 
         with aioresponses() as m:
             m.get(
-                "https://api.tracker.yandex.net/v2/issues/TEST-123/transitions",
+                "https://api.tracker.yandex.net/v3/issues/TEST-123/transitions",
                 payload=transitions_response,
             )
             m.get(
@@ -439,7 +439,7 @@ class TestIssueClose:
 
         with aioresponses() as m:
             m.get(
-                "https://api.tracker.yandex.net/v2/issues/TEST-123/transitions",
+                "https://api.tracker.yandex.net/v3/issues/TEST-123/transitions",
                 payload=transitions_response,
             )
             m.get(

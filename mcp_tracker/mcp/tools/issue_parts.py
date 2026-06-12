@@ -29,6 +29,18 @@ def _dump(value: Any) -> Any:
 
 CommentAction = Literal["get", "add", "update", "delete"]
 LinkAction = Literal["get", "add", "delete"]
+# The API accepts exactly these relationship values (free-form strings 422).
+LinkRelationship = Literal[
+    "relates",
+    "depends on",
+    "is dependent by",
+    "is subtask for",
+    "is parent task for",
+    "duplicates",
+    "is duplicated by",
+    "is epic of",
+    "has epic",
+]
 WorklogAction = Literal["get", "add", "update", "delete"]
 AttachmentAction = Literal["get", "upload", "download", "delete"]
 ChecklistAction = Literal["get", "add", "update", "delete", "clear"]
@@ -133,8 +145,11 @@ def register_issue_parts_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
             "Read or modify issue links.\n\n"
             "Actions:\n"
             "- `get` → `{links: [...]}` — list related issues\n"
-            "- `add` → `{link: {...}}` — requires `relationship` and `target_issue` "
-            "(e.g. relates, depends on, is dependent by, duplicates, is epic of, ...)\n"
+            "- `add` → `{link: {...}}` — requires `relationship` and `target_issue`. "
+            "Relationship is from the CURRENT issue to the target: `depends on` "
+            "(current is blocked by target), `is dependent by` (current blocks "
+            "target), `is subtask for`, `is parent task for`, `duplicates`, "
+            "`is duplicated by`, `is epic of`, `has epic`, `relates`\n"
             "- `delete` → `{ok: true}` — requires `link_id`"
         ),
     )
@@ -143,7 +158,7 @@ def register_issue_parts_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
         action: LinkAction,
         issue_id: IssueID,
         relationship: Annotated[
-            str | None, Field(description="Link relationship (add)")
+            LinkRelationship | None, Field(description="Link relationship (add)")
         ] = None,
         target_issue: Annotated[
             str | None, Field(description="Target issue key, e.g. 'PROJ-2' (add)")
@@ -163,6 +178,8 @@ def register_issue_parts_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
         if action == "add":
             rel = _require(relationship, "relationship", action)
             tgt = _require(target_issue, "target_issue", action)
+            # Linking touches both issues — the target must be allowed too.
+            check_issue_access(settings, tgt)
             link = await issues.issue_add_link(
                 issue_id,
                 relationship=rel,

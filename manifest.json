@@ -29,147 +29,167 @@
     }
   },
   "compatibility": {
-    "platforms": ["darwin", "linux", "win32"],
+    "platforms": [
+      "darwin",
+      "linux",
+      "win32"
+    ],
     "runtimes": {
       "python": ">=3.11"
     }
   },
   "tools": [
     {
-      "name": "queues_get_all",
-      "description": "List all available Yandex Tracker queues"
-    },
-    {
-      "name": "queue_get_tags",
-      "description": "Get all tags for a specific queue"
-    },
-    {
-      "name": "queue_get_versions",
-      "description": "Get all versions for a specific queue"
-    },
-    {
-      "name": "queue_get_fields",
-      "description": "Get fields for a specific queue"
-    },
-    {
-      "name": "queue_get_metadata",
-      "description": "Get detailed metadata about a specific queue"
-    },
-    {
-      "name": "users_get_all",
-      "description": "Get information about user accounts registered in the organization"
-    },
-    {
-      "name": "user_get",
-      "description": "Get information about a specific user by login or UID"
-    },
-    {
-      "name": "user_get_current",
-      "description": "Get information about the current authenticated user"
-    },
-    {
-      "name": "users_search",
-      "description": "Search user based on login, email or real name (first or last name, or both)"
-    },
-    {
-      "name": "get_global_fields",
-      "description": "Get all global fields available in Yandex Tracker"
-    },
-    {
-      "name": "get_statuses",
-      "description": "Get all available issue statuses"
-    },
-    {
-      "name": "get_issue_types",
-      "description": "Get all available issue types"
-    },
-    {
-      "name": "get_priorities",
-      "description": "Get all available issue priorities"
-    },
-    {
-      "name": "get_resolutions",
-      "description": "Get all available issue resolutions"
-    },
-    {
-      "name": "issue_get",
-      "description": "Retrieve detailed issue information by ID"
+      "name": "tracker_reference",
+      "description": "Get reference data: global fields, statuses, issue types, priorities, resolutions"
     },
     {
       "name": "issue_get_url",
-      "description": "Generate web URL for an issue"
+      "description": "Get a Yandex Tracker issue URL by its id"
     },
     {
-      "name": "issue_get_comments",
-      "description": "Fetch all comments for an issue"
-    },
-    {
-      "name": "issue_add_comment",
-      "description": "Add a comment to a Yandex Tracker issue"
-    },
-    {
-      "name": "issue_update_comment",
-      "description": "Update an existing comment in a Yandex Tracker issue"
-    },
-    {
-      "name": "issue_delete_comment",
-      "description": "Delete a comment from a Yandex Tracker issue"
-    },
-    {
-      "name": "issue_get_links",
-      "description": "Get related issue links"
-    },
-    {
-      "name": "issue_get_worklogs",
-      "description": "Retrieve worklog entries"
-    },
-    {
-      "name": "issue_add_worklog",
-      "description": "Add a worklog entry (log spent time) to an issue"
-    },
-    {
-      "name": "issue_update_worklog",
-      "description": "Update a worklog entry (spent time record) in an issue"
-    },
-    {
-      "name": "issue_delete_worklog",
-      "description": "Delete a worklog entry (spent time record) from an issue"
-    },
-    {
-      "name": "issue_get_attachments",
-      "description": "Get attachments for an issue"
-    },
-    {
-      "name": "issue_get_checklist",
-      "description": "Get checklist items of a Yandex Tracker issue by its id"
-    },
-    {
-      "name": "issue_get_transitions",
-      "description": "Get possible status transitions for a Yandex Tracker issue"
-    },
-    {
-      "name": "issue_execute_transition",
-      "description": "Execute a status transition for a Yandex Tracker issue. Must call issue_get_transitions first to get available transition IDs."
-    },
-    {
-      "name": "issue_close",
-      "description": "Close a Yandex Tracker issue with a resolution. Automatically finds a transition to done status. Must call get_resolutions first."
-    },
-    {
-      "name": "issue_create",
-      "description": "Create a new issue in a Yandex Tracker queue"
-    },
-    {
-      "name": "issue_update",
-      "description": "Update an existing Yandex Tracker issue"
+      "name": "issue_get",
+      "description": "Get a Yandex Tracker issue by its id"
     },
     {
       "name": "issues_find",
-      "description": "Search issues using Yandex Tracker Query Language"
+      "description": "Find issues via YQL query, structured filter or issue keys"
     },
     {
       "name": "issues_count",
-      "description": "Count issues matching a query using Yandex Tracker Query Language"
+      "description": "Count issues matching a YQL query"
+    },
+    {
+      "name": "issue_get_transitions",
+      "description": "Get possible status transitions for an issue"
+    },
+    {
+      "name": "issue_comments",
+      "description": "Read or modify issue comments (get/add/update/delete)"
+    },
+    {
+      "name": "issue_links",
+      "description": "Read or modify issue links (get/add/delete)"
+    },
+    {
+      "name": "issue_worklogs",
+      "description": "Read or modify issue worklogs (get/add/update/delete)"
+    },
+    {
+      "name": "issue_attachments",
+      "description": "Read, upload, download or delete issue attachments"
+    },
+    {
+      "name": "issue_checklist",
+      "description": "Manage issue checklist items (get/add/update/delete/clear)"
+    },
+    {
+      "name": "issue_tags",
+      "description": "Add or remove tags on an issue"
+    },
+    {
+      "name": "queues",
+      "description": "Manage and inspect queues (list/tags/versions/fields/metadata/create)"
+    },
+    {
+      "name": "users",
+      "description": "Look up users in the organization (list/search/get/current)"
+    },
+    {
+      "name": "bulk",
+      "description": "Run or inspect bulk operations on issues (update/move/transition/status)"
+    },
+    {
+      "name": "components",
+      "description": "Manage components (list/get/create/update/delete)"
+    },
+    {
+      "name": "filters",
+      "description": "Manage saved filters (list/get/create/update/delete)"
+    },
+    {
+      "name": "dashboards",
+      "description": "Manage dashboards (list/get/widgets/create/update/delete)"
+    },
+    {
+      "name": "sprints",
+      "description": "Manage sprints (get/create/update/delete/start/finish)"
+    },
+    {
+      "name": "boards",
+      "description": "Manage agile boards (list/get/columns/sprints/create/update/delete)"
+    },
+    {
+      "name": "board_columns",
+      "description": "Manage board columns (create/update/delete)"
+    },
+    {
+      "name": "triggers",
+      "description": "Manage queue triggers (list/get/create/update/delete)"
+    },
+    {
+      "name": "autoactions",
+      "description": "Manage queue autoactions (list/get/create/update/delete)"
+    },
+    {
+      "name": "macros",
+      "description": "Manage queue macros (list/get/create/update/delete)"
+    },
+    {
+      "name": "workflows",
+      "description": "List workflows or get the workflow of a queue"
+    },
+    {
+      "name": "projects_search",
+      "description": "Search projects (entities API)"
+    },
+    {
+      "name": "portfolios_search",
+      "description": "Search portfolios (entities API)"
+    },
+    {
+      "name": "goals_search",
+      "description": "Search goals (entities API)"
+    },
+    {
+      "name": "entity_get",
+      "description": "Get a project/portfolio/goal entity by id"
+    },
+    {
+      "name": "projects_legacy_list",
+      "description": "List projects via the legacy v2 API"
+    },
+    {
+      "name": "issue_execute_transition",
+      "description": "Execute a status transition for an issue"
+    },
+    {
+      "name": "issue_close",
+      "description": "Close an issue with a resolution"
+    },
+    {
+      "name": "issue_create",
+      "description": "Create a new issue in a queue"
+    },
+    {
+      "name": "issue_update",
+      "description": "Update an existing issue"
+    },
+    {
+      "name": "issue_move_to_queue",
+      "description": "Move an issue to another queue"
+    },
+    {
+      "name": "entity_create",
+      "description": "Create a project/portfolio/goal entity"
+    },
+    {
+      "name": "entity_update",
+      "description": "Update a project/portfolio/goal entity"
+    },
+    {
+      "name": "entity_delete",
+      "description": "Delete a project/portfolio/goal entity"
     }
   ],
   "user_config": {

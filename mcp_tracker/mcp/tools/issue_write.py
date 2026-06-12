@@ -136,8 +136,8 @@ def register_issue_write_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
         ],
         summary: Annotated[str, Field(description="Issue title/summary")],
         type: Annotated[
-            int | None,
-            Field(description="Issue type id (from get_issue_types tool)"),
+            int | str | None,
+            Field(description="Issue type id or key (e.g. 'bug', 'task')"),
         ] = None,
         description: Annotated[
             str | None, Field(description="Issue description")
@@ -147,7 +147,15 @@ def register_issue_write_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
         ] = None,
         priority: Annotated[
             str | None,
-            Field(description="Priority key (from get_priorities tool,)"),
+            Field(description="Priority key (trivial/minor/normal/critical/blocker)"),
+        ] = None,
+        parent: Annotated[
+            str | None,
+            Field(description="Parent issue key, e.g. 'QUEUE-123'"),
+        ] = None,
+        sprint: Annotated[
+            list[str] | None,
+            Field(description="Sprint ids to add the issue to"),
         ] = None,
         fields: Annotated[
             dict[str, Any] | None,
@@ -161,6 +169,8 @@ def register_issue_write_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
         ] = None,
     ) -> Issue:
         check_queue_access(settings, queue)
+        if parent is not None:
+            check_issue_access(settings, parent)
         return await ctx.request_context.lifespan_context.issues.issue_create(
             queue=queue,
             summary=summary,
@@ -168,6 +178,8 @@ def register_issue_write_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
             description=description,
             assignee=assignee,
             priority=priority,
+            parent=parent,
+            sprint=sprint,
             auth=get_yandex_auth(ctx),
             **(fields or {}),
         )
@@ -245,10 +257,10 @@ def register_issue_write_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
         version: Annotated[
             int | None,
             Field(
-                description="Issue version for optimistic locking. "
-                "Leave unset — the server fetches the current version via issue_get "
-                "right before the PATCH. Specify only when you want to fail the "
-                "request on concurrent edits (strict optimistic locking)."
+                description="Issue version for optimistic locking. Leave unset "
+                "to apply the update unconditionally. Specify only when you want "
+                "to fail the request on concurrent edits (strict optimistic "
+                "locking)."
             ),
         ] = None,
         fields: Annotated[
@@ -264,14 +276,9 @@ def register_issue_write_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
         auth = get_yandex_auth(ctx)
         issues = ctx.request_context.lifespan_context.issues
 
-        # Optimistic-lock convenience: if the caller did not provide an explicit
-        # version, fetch the current one so the PATCH does not require an
-        # up-front issue_get round-trip from the client. Callers that need
-        # strict conflict detection pass `version` themselves.
-        if version is None:
-            current = await issues.issue_get(issue_id, auth=auth)
-            version = current.version
-
+        # The API treats `version` as optional optimistic locking — omitting it
+        # applies the PATCH unconditionally, so no pre-fetch is needed (a cached
+        # pre-fetch used to cause spurious 409s here).
         return await issues.issue_update(
             issue_id,
             summary=summary,

@@ -2,7 +2,11 @@ from unittest.mock import AsyncMock
 
 from mcp.client.session import ClientSession
 
-from mcp_tracker.tracker.proto.types.issues import Issue, IssueTransition
+from mcp_tracker.tracker.proto.types.issues import (
+    Issue,
+    IssueSearchPage,
+    IssueTransition,
+)
 from tests.mcp.conftest import get_tool_result_content
 
 
@@ -76,7 +80,9 @@ class TestIssuesFind:
         mock_issues_protocol: AsyncMock,
         sample_issues: list[Issue],
     ) -> None:
-        mock_issues_protocol.issues_find.return_value = sample_issues
+        mock_issues_protocol.issues_find.return_value = IssueSearchPage(
+            issues=sample_issues
+        )
 
         result = await client_session.call_tool("issues_find", {"query": "Queue: TEST"})
 
@@ -94,7 +100,9 @@ class TestIssuesFind:
         mock_issues_protocol: AsyncMock,
         sample_issues: list[Issue],
     ) -> None:
-        mock_issues_protocol.issues_find.return_value = sample_issues
+        mock_issues_protocol.issues_find.return_value = IssueSearchPage(
+            issues=sample_issues
+        )
 
         result = await client_session.call_tool(
             "issues_find", {"query": "Queue: TEST", "page": 2, "per_page": 50}
@@ -113,7 +121,9 @@ class TestIssuesFind:
         mock_issues_protocol: AsyncMock,
         sample_issues: list[Issue],
     ) -> None:
-        mock_issues_protocol.issues_find.return_value = sample_issues
+        mock_issues_protocol.issues_find.return_value = IssueSearchPage(
+            issues=sample_issues
+        )
 
         result = await client_session.call_tool("issues_find", {"query": "Queue: TEST"})
 
@@ -156,7 +166,9 @@ class TestIssuesFindFilterToYql:
         mock_issues_protocol: AsyncMock,
         sample_issues: list[Issue],
     ) -> None:
-        mock_issues_protocol.issues_find.return_value = sample_issues
+        mock_issues_protocol.issues_find.return_value = IssueSearchPage(
+            issues=sample_issues
+        )
 
         result = await client_session.call_tool(
             "issues_find",
@@ -182,7 +194,9 @@ class TestIssuesFindFilterToYql:
         mock_issues_protocol: AsyncMock,
         sample_issues: list[Issue],
     ) -> None:
-        mock_issues_protocol.issues_find.return_value = sample_issues
+        mock_issues_protocol.issues_find.return_value = IssueSearchPage(
+            issues=sample_issues
+        )
 
         result = await client_session.call_tool(
             "issues_find",
@@ -224,6 +238,60 @@ class TestIssuesCount:
         mock_issues_protocol.issues_count.assert_called_once()
         content = get_tool_result_content(result)
         assert content == 42
+
+    async def test_limit_queues_constrains_count(
+        self,
+        client_session_with_limits: ClientSession,
+        mock_issues_protocol: AsyncMock,
+    ) -> None:
+        mock_issues_protocol.issues_count.return_value = 1
+
+        result = await client_session_with_limits.call_tool(
+            "issues_count", {"query": "Assignee: me()"}
+        )
+
+        assert not result.isError
+        query_arg = mock_issues_protocol.issues_count.call_args.args[0]
+        assert query_arg == 'Queue: "ALLOWED", "PERMITTED" AND (Assignee: me())'
+
+
+class TestIssuesFindQueueLimits:
+    async def test_limit_queues_constrains_search(
+        self,
+        client_session_with_limits: ClientSession,
+        mock_issues_protocol: AsyncMock,
+        sample_issues: list[Issue],
+    ) -> None:
+        mock_issues_protocol.issues_find.return_value = IssueSearchPage(
+            issues=sample_issues
+        )
+
+        result = await client_session_with_limits.call_tool(
+            "issues_find", {"query": "Assignee: me()"}
+        )
+
+        assert not result.isError
+        call_kwargs = mock_issues_protocol.issues_find.call_args.kwargs
+        assert call_kwargs["query"] == (
+            'Queue: "ALLOWED", "PERMITTED" AND (Assignee: me())'
+        )
+
+    async def test_totals_passed_through(
+        self,
+        client_session: ClientSession,
+        mock_issues_protocol: AsyncMock,
+        sample_issues: list[Issue],
+    ) -> None:
+        mock_issues_protocol.issues_find.return_value = IssueSearchPage(
+            issues=sample_issues, total_count=120, total_pages=8
+        )
+
+        result = await client_session.call_tool("issues_find", {"query": "Queue: TEST"})
+
+        assert not result.isError
+        content = get_tool_result_content(result)
+        assert content["total_count"] == 120
+        assert content["total_pages"] == 8
 
 
 class TestIssueGetTransitions:

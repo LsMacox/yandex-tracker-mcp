@@ -53,11 +53,20 @@ _FIELD_ALIASES: dict[str, str] = {
 }
 
 # Zero-arg YQL functions (plain strings in input → `name()` in output).
-_MAGIC_VALUES: dict[str, str] = {
+# Magic values are scoped to field categories so that legitimate literals are
+# not hijacked: e.g. `{status: "resolved"}` must stay `Status: resolved` and
+# not become `Status: notEmpty()` (which would match every issue).
+_GENERIC_MAGIC: dict[str, str] = {
     "empty": "empty()",
     "notempty": "notEmpty()",
     "not_empty": "notEmpty()",
+}
+
+_USER_MAGIC: dict[str, str] = {
     "me": "me()",
+}
+
+_DATE_MAGIC: dict[str, str] = {
     "today": "today()",
     "yesterday": "yesterday()",
     "tomorrow": "tomorrow()",
@@ -66,9 +75,41 @@ _MAGIC_VALUES: dict[str, str] = {
     "month": "month()",
     "quarter": "quarter()",
     "year": "year()",
+}
+
+_RESOLUTION_MAGIC: dict[str, str] = {
     "unresolved": "empty()",
     "resolved": "notEmpty()",
 }
+
+# YQL field names (post-normalization) where each magic family applies.
+_USER_FIELDS = {"Assignee", "Author", "Follower", "CreatedBy", "ModifiedBy"}
+_DATE_FIELDS = {
+    "Created",
+    "Updated",
+    "Resolved",
+    "Due",
+    "StartDate",
+    "EndDate",
+    "Start",
+    "Deadline",
+}
+_RESOLUTION_FIELDS = {"Resolution"}
+
+
+def _magic_for_field(field: str, lowered: str) -> str | None:
+    """Resolve a magic string for the given YQL field, or None if literal."""
+    magic = _GENERIC_MAGIC.get(lowered)
+    if magic is not None:
+        return magic
+    if field in _USER_FIELDS:
+        return _USER_MAGIC.get(lowered)
+    if field in _DATE_FIELDS:
+        return _DATE_MAGIC.get(lowered)
+    if field in _RESOLUTION_FIELDS:
+        return _RESOLUTION_MAGIC.get(lowered)
+    return None
+
 
 # YAML-safe: identifiers that don't need quoting in YQL (letters, digits,
 # underscores, and the dot used in some local field ids like `myField.foo`).
@@ -95,8 +136,8 @@ def _quote(value: str) -> str:
     return f'"{escaped}"'
 
 
-def _format_scalar(value: Any) -> str:
-    """Render a scalar value as a YQL token."""
+def _format_scalar(value: Any, field: str) -> str:
+    """Render a scalar value as a YQL token for the given field."""
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, (int, float)):
@@ -105,7 +146,7 @@ def _format_scalar(value: Any) -> str:
         return "empty()"
 
     text = str(value).strip()
-    magic = _MAGIC_VALUES.get(text.lower())
+    magic = _magic_for_field(field, text.lower())
     if magic is not None:
         return magic
 
@@ -133,17 +174,17 @@ def _format_range(field: str, value: dict[str, Any]) -> str:
 
     # `{from, to}` → `Created: 2024-01-01 .. 2024-12-31`
     if from_ is not None and to is not None and gt is None and lt is None:
-        return f"{field}: {_format_scalar(from_)} .. {_format_scalar(to)}"
+        return f"{field}: {_format_scalar(from_, field)} .. {_format_scalar(to, field)}"
 
     parts: list[str] = []
     if from_ is not None:
-        parts.append(f"{field}: >= {_format_scalar(from_)}")
+        parts.append(f"{field}: >= {_format_scalar(from_, field)}")
     if gt is not None:
-        parts.append(f"{field}: > {_format_scalar(gt)}")
+        parts.append(f"{field}: > {_format_scalar(gt, field)}")
     if to is not None:
-        parts.append(f"{field}: <= {_format_scalar(to)}")
+        parts.append(f"{field}: <= {_format_scalar(to, field)}")
     if lt is not None:
-        parts.append(f"{field}: < {_format_scalar(lt)}")
+        parts.append(f"{field}: < {_format_scalar(lt, field)}")
 
     if not parts:
         raise FilterConversionError(
@@ -165,13 +206,13 @@ def _render_clause(key: str, value: Any) -> str:
             raise FilterConversionError(
                 f"Empty list for `{key}` — Tracker rejects `Field:` without values."
             )
-        rendered = ", ".join(_format_scalar(v) for v in value)
+        rendered = ", ".join(_format_scalar(v, field) for v in value)
         return f"{field}: {rendered}"
 
     if isinstance(value, dict):
         return _format_range(field, value)
 
-    return f"{field}: {_format_scalar(value)}"
+    return f"{field}: {_format_scalar(value, field)}"
 
 
 def filter_to_yql(filter_dict: dict[str, Any]) -> str:
@@ -194,24 +235,3 @@ def filter_to_yql(filter_dict: dict[str, Any]) -> str:
 
     clauses = [_render_clause(k, v) for k, v in filter_dict.items()]
     return " AND ".join(clauses)
-
-
-def order_to_sort_by(order: list[str]) -> str:
-    """Convert `['-updated', '+priority']` → `"Sort By": Updated DESC, Priority ASC`.
-
-    Empty input returns an empty string (caller concatenates conditionally).
-    """
-    if not order:
-        return ""
-    parts: list[str] = []
-    for item in order:
-        direction = "ASC"
-        raw = item
-        if raw.startswith("-"):
-            direction = "DESC"
-            raw = raw[1:]
-        elif raw.startswith("+"):
-            raw = raw[1:]
-        field = _normalize_field(raw)
-        parts.append(f"{field} {direction}")
-    return '"Sort By": ' + ", ".join(parts)

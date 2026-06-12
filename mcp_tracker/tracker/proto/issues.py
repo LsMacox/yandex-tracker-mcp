@@ -16,6 +16,7 @@ from .types.issues import (
     IssueAttachment,
     IssueComment,
     IssueLink,
+    IssueSearchPage,
     IssueTransition,
     Worklog,
 )
@@ -71,7 +72,7 @@ class IssueProtocol(Protocol):
         per_page: int = 15,
         page: int = 1,
         auth: YandexAuth | None = None,
-    ) -> list[Issue]: ...
+    ) -> IssueSearchPage: ...
     async def issue_get_worklogs(
         self, issue_id: str, *, auth: YandexAuth | None = None
     ) -> list[Worklog]: ...
@@ -115,7 +116,7 @@ class IssueProtocol(Protocol):
         queue: str,
         summary: str,
         *,
-        type: int | None = None,
+        type: int | str | None = None,
         description: str | None = None,
         assignee: str | int | None = None,
         priority: str | None = None,
@@ -281,6 +282,7 @@ class IssueProtocol(Protocol):
         initial_status: bool | None = None,
         expand: list[str] | None = None,
         notify: bool | None = None,
+        notify_author: bool | None = None,
         extra: dict[str, Any] | None = None,
         auth: YandexAuth | None = None,
     ) -> Issue: ...

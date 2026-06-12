@@ -8,7 +8,11 @@ from pydantic import BaseModel, Field
 
 from mcp_tracker.mcp.context import AppContext
 from mcp_tracker.mcp.params import IssueIDs, QueueID
-from mcp_tracker.mcp.tools._access import require_write_mode
+from mcp_tracker.mcp.tools._access import (
+    check_issue_access,
+    check_queue_access,
+    require_write_mode,
+)
 from mcp_tracker.mcp.utils import get_yandex_auth
 from mcp_tracker.settings import Settings
 
@@ -93,6 +97,11 @@ def register_bulkchange_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
 
         require_write_mode(settings, action)
 
+        # Bulk operations must honor queue restrictions like single-issue tools.
+        if issues:
+            for issue_key in issues:
+                check_issue_access(settings, issue_key)
+
         if action == "update":
             if issues is None:
                 raise ValueError("`issues` is required for action `update`.")
@@ -112,6 +121,7 @@ def register_bulkchange_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
                 raise ValueError("`issues` is required for action `move`.")
             if queue is None:
                 raise ValueError("`queue` is required for action `move`.")
+            check_queue_access(settings, queue)
             item = await bulkchange.bulk_move(
                 issues=issues,
                 queue=queue,

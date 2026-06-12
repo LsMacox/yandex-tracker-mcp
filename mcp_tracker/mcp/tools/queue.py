@@ -55,8 +55,12 @@ def register_queue_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
             "`include_local_fields=False` to skip queue-specific fields\n"
             "- `metadata` → queue object; requires `queue_id`; pass `expand` to "
             "include e.g. `['issueTypesConfig']` for resolutions per type\n"
-            "- `create` → queue; requires `key`, `name`, `lead`; `default_type` and "
-            "`default_priority` default to `task`/`normal`"
+            "- `create` → queue; requires `key`, `name`, `lead` and "
+            "`issue_types_config` (the API rejects creation without it); "
+            "`default_type` and `default_priority` default to `task`/`normal`. "
+            "Example config: `[{issueType: 'task', workflow: 'oicn', "
+            "resolutions: ['wontFix', 'fixed']}]` — list workflows via the "
+            "`workflows` tool"
         ),
     )
     async def queues(
@@ -94,6 +98,13 @@ def register_queue_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
         default_priority: Annotated[
             str, Field(description="Default priority key (create)")
         ] = "normal",
+        issue_types_config: Annotated[
+            list[dict[str, Any]] | None,
+            Field(
+                description="Issue type configs (create, required by the API): "
+                "[{issueType, workflow, resolutions: [...]}, ...]"
+            ),
+        ] = None,
         extra: Annotated[
             dict[str, Any] | None, Field(description="Extra body fields (create)")
         ] = None,
@@ -105,9 +116,12 @@ def register_queue_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
             result = []
             fetch_all = page is None
             current = 1 if page is None else page
+            # In fetch-all mode per_page only affects the number of HTTP
+            # round-trips (everything is returned anyway), so use large pages.
+            effective_per_page = max(per_page, 100) if fetch_all else per_page
             while True:
                 batch = await queues_proto.queues_list(
-                    per_page=per_page, page=current, auth=auth
+                    per_page=effective_per_page, page=current, auth=auth
                 )
                 if not batch:
                     break
@@ -165,6 +179,7 @@ def register_queue_tools(settings: Settings, mcp: FastMCP[Any]) -> None:
                 lead=lead_,
                 default_type=default_type,
                 default_priority=default_priority,
+                issue_types_config=issue_types_config,
                 extra=extra,
                 auth=auth,
             )

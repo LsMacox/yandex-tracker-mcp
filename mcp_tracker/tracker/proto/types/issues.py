@@ -62,6 +62,18 @@ IssueFieldsEnum = Enum(  # type: ignore[misc]  # ty: ignore[unused-ignore-commen
 )
 
 
+class IssueSearchPage(BaseModel):
+    """One page of `/issues/_search` results plus pagination totals.
+
+    Totals come from the `X-Total-Count` / `X-Total-Pages` response headers and
+    may be absent (e.g. when the API switches to relative pagination).
+    """
+
+    issues: list[Issue]
+    total_count: int | None = None
+    total_pages: int | None = None
+
+
 class IssueComment(CreatedUpdatedMixin, BaseTrackerEntity):
     id: int
     long_id: str | None = Field(

@@ -167,6 +167,31 @@ class TestQueuesCreate:
         assert call_kwargs["key"] == "NEW"
         assert call_kwargs["lead"] == "alice"
 
+    async def test_create_passes_issue_types_config(
+        self,
+        client_session: ClientSession,
+        mock_queues_protocol: AsyncMock,
+    ) -> None:
+        mock_queues_protocol.queue_create.return_value = Queue.model_construct(
+            id=1, key="NEW", name="New"
+        )
+        config = [{"issueType": "task", "workflow": "oicn", "resolutions": ["fixed"]}]
+
+        result = await client_session.call_tool(
+            "queues",
+            {
+                "action": "create",
+                "key": "NEW",
+                "name": "New",
+                "lead": "alice",
+                "issue_types_config": config,
+            },
+        )
+
+        assert not result.isError
+        call_kwargs = mock_queues_protocol.queue_create.call_args.kwargs
+        assert call_kwargs["issue_types_config"] == config
+
     async def test_read_only_blocks(
         self,
         client_session_read_only: ClientSession,

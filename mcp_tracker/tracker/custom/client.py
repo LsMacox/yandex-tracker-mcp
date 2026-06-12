@@ -5,7 +5,9 @@ import os
 import random
 import time
 from asyncio import CancelledError
+from collections.abc import AsyncIterator
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
 from typing import Any, Literal
 
 import jwt
@@ -46,6 +48,7 @@ from mcp_tracker.tracker.proto.types.issues import (
     IssueAttachment,
     IssueComment,
     IssueLink,
+    IssueSearchPage,
     IssueTransition,
     Worklog,
 )
@@ -311,6 +314,9 @@ class TrackerClient(
     AutomationsProtocol,
     BulkChangeProtocol,
 ):
+    # Transient statuses worth retrying on idempotent GETs.
+    _RETRY_STATUSES: frozenset[int] = frozenset({429, 502, 503, 504})
+
     def __init__(
         self,
         *,
@@ -321,7 +327,8 @@ class TrackerClient(
         org_id: str | None = None,
         cloud_org_id: str | None = None,
         base_url: str = "https://api.tracker.yandex.net",
-        timeout: float = 10,
+        timeout: float = 30,
+        get_retries: int = 2,
     ):
         self._token = token
         self._token_type = token_type
@@ -331,11 +338,37 @@ class TrackerClient(
         )
         self._org_id = org_id
         self._cloud_org_id = cloud_org_id
+        self._get_retries = max(0, get_retries)
 
         self._session = ClientSession(
             base_url=base_url,
             timeout=ClientTimeout(total=timeout),
         )
+
+    @asynccontextmanager
+    async def _get(self, url: str, **kwargs: Any) -> AsyncIterator[Any]:
+        """GET with retries on transient statuses (429/502/503/504).
+
+        Only GETs are retried — they are idempotent. Honors `Retry-After`
+        (seconds form) with a capped exponential backoff fallback.
+        """
+        attempt = 0
+        while True:
+            response = await self._session.get(url, **kwargs)
+            if response.status in self._RETRY_STATUSES and attempt < self._get_retries:
+                retry_after = response.headers.get("Retry-After", "")
+                response.release()
+                delay = (
+                    float(retry_after) if retry_after.isdigit() else 0.5 * (2**attempt)
+                )
+                await asyncio.sleep(min(delay, 10.0))
+                attempt += 1
+                continue
+            try:
+                yield response
+            finally:
+                response.release()
+            return
 
     async def prepare(self):
         if self._service_account_store:
@@ -396,6 +429,7 @@ class TrackerClient(
         lead: str,
         default_type: str,
         default_priority: str,
+        issue_types_config: list[dict[str, Any]] | None = None,
         extra: dict[str, Any] | None = None,
         auth: YandexAuth | None = None,
     ) -> Queue:
@@ -406,6 +440,8 @@ class TrackerClient(
             "defaultType": default_type,
             "defaultPriority": default_priority,
         }
+        if issue_types_config is not None:
+            body["issueTypesConfig"] = issue_types_config
         if extra:
             for k, v in extra.items():
                 body.setdefault(k, v)
@@ -426,7 +462,7 @@ class TrackerClient(
             "perPage": per_page,
             "page": page,
         }
-        async with self._session.get(
+        async with self._get(
             "v3/queues", headers=await self._build_headers(auth), params=params
         ) as response:
             if response.status >= 400:
@@ -436,7 +472,7 @@ class TrackerClient(
     async def queues_get_local_fields(
         self, queue_id: str, *, auth: YandexAuth | None = None
     ) -> list[LocalField]:
-        async with self._session.get(
+        async with self._get(
             f"v3/queues/{queue_id}/localFields", headers=await self._build_headers(auth)
         ) as response:
             if response.status >= 400:
@@ -446,7 +482,7 @@ class TrackerClient(
     async def queues_get_tags(
         self, queue_id: str, *, auth: YandexAuth | None = None
     ) -> list[str]:
-        async with self._session.get(
+        async with self._get(
             f"v3/queues/{queue_id}/tags", headers=await self._build_headers(auth)
         ) as response:
             if response.status >= 400:
@@ -456,7 +492,7 @@ class TrackerClient(
     async def queues_get_versions(
         self, queue_id: str, *, auth: YandexAuth | None = None
     ) -> list[QueueVersion]:
-        async with self._session.get(
+        async with self._get(
             f"v3/queues/{queue_id}/versions", headers=await self._build_headers(auth)
         ) as response:
             if response.status >= 400:
@@ -466,7 +502,7 @@ class TrackerClient(
     async def queues_get_fields(
         self, queue_id: str, *, auth: YandexAuth | None = None
     ) -> list[GlobalField]:
-        async with self._session.get(
+        async with self._get(
             f"v3/queues/{queue_id}/fields", headers=await self._build_headers(auth)
         ) as response:
             if response.status >= 400:
@@ -484,7 +520,7 @@ class TrackerClient(
         if expand:
             params["expand"] = ",".join(expand)
 
-        async with self._session.get(
+        async with self._get(
             f"v3/queues/{queue_id}",
             headers=await self._build_headers(auth),
             params=params if params else None,
@@ -496,7 +532,7 @@ class TrackerClient(
     async def get_global_fields(
         self, *, auth: YandexAuth | None = None
     ) -> list[GlobalField]:
-        async with self._session.get(
+        async with self._get(
             "v3/fields", headers=await self._build_headers(auth)
         ) as response:
             if response.status >= 400:
@@ -504,7 +540,7 @@ class TrackerClient(
             return GlobalFieldList.model_validate_json(await response.read()).root
 
     async def get_statuses(self, *, auth: YandexAuth | None = None) -> list[Status]:
-        async with self._session.get(
+        async with self._get(
             "v3/statuses", headers=await self._build_headers(auth)
         ) as response:
             if response.status >= 400:
@@ -514,7 +550,7 @@ class TrackerClient(
     async def get_issue_types(
         self, *, auth: YandexAuth | None = None
     ) -> list[IssueType]:
-        async with self._session.get(
+        async with self._get(
             "v3/issuetypes", headers=await self._build_headers(auth)
         ) as response:
             if response.status >= 400:
@@ -522,7 +558,7 @@ class TrackerClient(
             return IssueTypeList.model_validate_json(await response.read()).root
 
     async def get_priorities(self, *, auth: YandexAuth | None = None) -> list[Priority]:
-        async with self._session.get(
+        async with self._get(
             "v3/priorities", headers=await self._build_headers(auth)
         ) as response:
             if response.status >= 400:
@@ -532,7 +568,7 @@ class TrackerClient(
     async def get_resolutions(
         self, *, auth: YandexAuth | None = None
     ) -> list[Resolution]:
-        async with self._session.get(
+        async with self._get(
             "v3/resolutions", headers=await self._build_headers(auth)
         ) as response:
             if response.status >= 400:
@@ -542,7 +578,7 @@ class TrackerClient(
     async def issue_get(
         self, issue_id: str, *, auth: YandexAuth | None = None
     ) -> Issue:
-        async with self._session.get(
+        async with self._get(
             f"v3/issues/{issue_id}", headers=await self._build_headers(auth)
         ) as response:
             if response.status == 404:
@@ -554,7 +590,7 @@ class TrackerClient(
     async def issues_get_links(
         self, issue_id: str, *, auth: YandexAuth | None = None
     ) -> list[IssueLink]:
-        async with self._session.get(
+        async with self._get(
             f"v3/issues/{issue_id}/links", headers=await self._build_headers(auth)
         ) as response:
             if response.status == 404:
@@ -566,7 +602,7 @@ class TrackerClient(
     async def issue_get_comments(
         self, issue_id: str, *, auth: YandexAuth | None = None
     ) -> list[IssueComment]:
-        async with self._session.get(
+        async with self._get(
             f"v3/issues/{issue_id}/comments", headers=await self._build_headers(auth)
         ) as response:
             if response.status == 404:
@@ -670,7 +706,7 @@ class TrackerClient(
         per_page: int = 15,
         page: int = 1,
         auth: YandexAuth | None = None,
-    ) -> list[Issue]:
+    ) -> IssueSearchPage:
         params = {
             "perPage": per_page,
             "page": page,
@@ -678,22 +714,26 @@ class TrackerClient(
 
         body: dict[str, Any] = {}
 
+        # The API forbids combining `queue`/`keys`/`filter`/`query` in one
+        # request, so `keys` alongside a query is folded into the YQL instead.
         # Tracker's /v3/issues/_search accepts `order` only together with `filter`.
         # When using raw YQL `query`, sorting is expressed inline as `"Sort By": ...`.
         if query is not None:
+            if keys:
+                keys_clause = "Key: " + ", ".join(f'"{k}"' for k in keys)
+                query = f"{keys_clause} AND ({query})"
             if order:
                 sort_by = _order_to_yql_sort_by(order)
                 if sort_by and '"Sort By"' not in query:
                     query = f"{query} {sort_by}".strip()
             body["query"] = query
+        elif keys is not None:
+            body["keys"] = keys
         else:
             if filter is not None:
                 body["filter"] = filter
             if order is not None:
                 body["order"] = order
-
-        if keys is not None:
-            body["keys"] = keys
 
         async with self._session.post(
             "v3/issues/_search",
@@ -703,12 +743,21 @@ class TrackerClient(
         ) as response:
             if response.status >= 400:
                 await _raise_tracker_error(response)
-            return IssueList.model_validate_json(await response.read()).root
+
+            def _int_header(name: str) -> int | None:
+                raw = response.headers.get(name, "")
+                return int(raw) if raw.isdigit() else None
+
+            return IssueSearchPage(
+                issues=IssueList.model_validate_json(await response.read()).root,
+                total_count=_int_header("X-Total-Count"),
+                total_pages=_int_header("X-Total-Pages"),
+            )
 
     async def issue_get_worklogs(
         self, issue_id: str, *, auth: YandexAuth | None = None
     ) -> list[Worklog]:
-        async with self._session.get(
+        async with self._get(
             f"v3/issues/{issue_id}/worklog", headers=await self._build_headers(auth)
         ) as response:
             if response.status == 404:
@@ -814,7 +863,7 @@ class TrackerClient(
     async def issue_get_attachments(
         self, issue_id: str, *, auth: YandexAuth | None = None
     ) -> list[IssueAttachment]:
-        async with self._session.get(
+        async with self._get(
             f"v3/issues/{issue_id}/attachments", headers=await self._build_headers(auth)
         ) as response:
             if response.status == 404:
@@ -830,7 +879,7 @@ class TrackerClient(
             "perPage": per_page,
             "page": page,
         }
-        async with self._session.get(
+        async with self._get(
             "v3/users", headers=await self._build_headers(auth), params=params
         ) as response:
             if response.status >= 400:
@@ -840,7 +889,7 @@ class TrackerClient(
     async def user_get(
         self, user_id: str, *, auth: YandexAuth | None = None
     ) -> User | None:
-        async with self._session.get(
+        async with self._get(
             f"v3/users/{user_id}", headers=await self._build_headers(auth)
         ) as response:
             if response.status == 404:
@@ -850,7 +899,7 @@ class TrackerClient(
             return User.model_validate_json(await response.read())
 
     async def user_get_current(self, *, auth: YandexAuth | None = None) -> User:
-        async with self._session.get(
+        async with self._get(
             "v3/myself", headers=await self._build_headers(auth)
         ) as response:
             if response.status >= 400:
@@ -860,7 +909,7 @@ class TrackerClient(
     async def issue_get_checklist(
         self, issue_id: str, *, auth: YandexAuth | None = None
     ) -> list[ChecklistItem]:
-        async with self._session.get(
+        async with self._get(
             f"v3/issues/{issue_id}/checklistItems",
             headers=await self._build_headers(auth),
         ) as response:
@@ -890,7 +939,7 @@ class TrackerClient(
         queue: str,
         summary: str,
         *,
-        type: int | None = None,
+        type: int | str | None = None,
         description: str | None = None,
         assignee: str | int | None = None,
         priority: str | int | None = None,
@@ -931,8 +980,8 @@ class TrackerClient(
     async def issue_get_transitions(
         self, issue_id: str, *, auth: YandexAuth | None = None
     ) -> list[IssueTransition]:
-        async with self._session.get(
-            f"v2/issues/{issue_id}/transitions", headers=await self._build_headers(auth)
+        async with self._get(
+            f"v3/issues/{issue_id}/transitions", headers=await self._build_headers(auth)
         ) as response:
             if response.status == 404:
                 raise IssueNotFound(issue_id)
@@ -1141,9 +1190,16 @@ class TrackerClient(
         try:
             return IssueLink.model_validate_json(data)
         except Exception:
+            # Some deployments answer with the full link list; pick the link
+            # pointing at the issue we just connected rather than guessing by
+            # position (ordering is not guaranteed).
             links = IssueLinkList.model_validate_json(data).root
             if not links:
                 raise
+            target = target_issue.strip().lower()
+            for link in links:
+                if link.object and (link.object.key or "").lower() == target:
+                    return link
             return links[-1]
 
     async def issue_delete_link(
@@ -1157,8 +1213,8 @@ class TrackerClient(
             f"v3/issues/{issue_id}/links/{link_id}",
             headers=await self._build_headers(auth),
         ) as response:
-            if response.status == 404:
-                raise IssueNotFound(issue_id)
+            # 404 here can mean either a missing issue or a missing link —
+            # surface the API error instead of blaming the issue.
             if response.status >= 400:
                 await _raise_tracker_error(response)
 
@@ -1368,7 +1424,7 @@ class TrackerClient(
                 "Provide at least one of `dest_path` or `return_base64=True`."
             )
 
-        async with self._session.get(
+        async with self._get(
             f"v3/issues/{issue_id}/attachments/{attachment_id}/{filename}",
             headers=await self._build_headers(auth),
         ) as response:
@@ -1439,15 +1495,13 @@ class TrackerClient(
         initial_status: bool | None = None,
         expand: list[str] | None = None,
         notify: bool | None = None,
+        notify_author: bool | None = None,
         extra: dict[str, Any] | None = None,
         auth: YandexAuth | None = None,
     ) -> Issue:
-        body: dict[str, Any] = {"queue": queue}
-        if extra:
-            for k, v in extra.items():
-                body.setdefault(k, v)
-
-        params: dict[str, Any] = {}
+        # The target queue is a query parameter; the JSON body is reserved for
+        # issue fields to change during the move (issue-edit format).
+        params: dict[str, Any] = {"queue": queue}
         if move_all_fields is not None:
             params["moveAllFields"] = str(move_all_fields).lower()
         if initial_status is not None:
@@ -1456,12 +1510,14 @@ class TrackerClient(
             params["expand"] = ",".join(expand)
         if notify is not None:
             params["notify"] = str(notify).lower()
+        if notify_author is not None:
+            params["notifyAuthor"] = str(notify_author).lower()
 
         async with self._session.post(
             f"v3/issues/{issue_id}/_move",
             headers=await self._build_headers(auth),
-            json=body,
-            params=params if params else None,
+            json=extra or {},
+            params=params,
         ) as response:
             if response.status == 404:
                 raise IssueNotFound(issue_id)
@@ -1470,7 +1526,7 @@ class TrackerClient(
             return Issue.model_validate_json(await response.read())
 
     async def boards_list(self, *, auth: YandexAuth | None = None) -> list[Board]:
-        async with self._session.get(
+        async with self._get(
             "v3/boards", headers=await self._build_headers(auth)
         ) as response:
             if response.status >= 400:
@@ -1480,7 +1536,7 @@ class TrackerClient(
     async def board_get(
         self, board_id: int, *, auth: YandexAuth | None = None
     ) -> Board:
-        async with self._session.get(
+        async with self._get(
             f"v3/boards/{board_id}", headers=await self._build_headers(auth)
         ) as response:
             if response.status >= 400:
@@ -1490,7 +1546,7 @@ class TrackerClient(
     async def board_get_columns(
         self, board_id: int, *, auth: YandexAuth | None = None
     ) -> list[BoardColumn]:
-        async with self._session.get(
+        async with self._get(
             f"v3/boards/{board_id}/columns",
             headers=await self._build_headers(auth),
         ) as response:
@@ -1501,7 +1557,7 @@ class TrackerClient(
     async def board_get_sprints(
         self, board_id: int, *, auth: YandexAuth | None = None
     ) -> list[Sprint]:
-        async with self._session.get(
+        async with self._get(
             f"v3/boards/{board_id}/sprints",
             headers=await self._build_headers(auth),
         ) as response:
@@ -1517,7 +1573,7 @@ class TrackerClient(
     async def sprint_get(
         self, sprint_id: str, *, auth: YandexAuth | None = None
     ) -> Sprint:
-        async with self._session.get(
+        async with self._get(
             f"v3/sprints/{sprint_id}", headers=await self._build_headers(auth)
         ) as response:
             if response.status >= 400:
@@ -1795,7 +1851,7 @@ class TrackerClient(
     async def filter_get(
         self, filter_id: str, *, auth: YandexAuth | None = None
     ) -> IssueFilter:
-        async with self._session.get(
+        async with self._get(
             f"v3/filters/{filter_id}", headers=await self._build_headers(auth)
         ) as response:
             if response.status >= 400:
@@ -1860,7 +1916,7 @@ class TrackerClient(
         auth: YandexAuth | None = None,
     ) -> list[Component]:
         params = {"perPage": per_page, "page": page}
-        async with self._session.get(
+        async with self._get(
             "v3/components",
             headers=await self._build_headers(auth),
             params=params,
@@ -1872,7 +1928,7 @@ class TrackerClient(
     async def component_get(
         self, component_id: str | int, *, auth: YandexAuth | None = None
     ) -> Component:
-        async with self._session.get(
+        async with self._get(
             f"v3/components/{component_id}",
             headers=await self._build_headers(auth),
         ) as response:
@@ -2013,7 +2069,7 @@ class TrackerClient(
             params["fields"] = ",".join(fields)
         if expand:
             params["expand"] = ",".join(expand)
-        async with self._session.get(
+        async with self._get(
             f"v3/entities/{entity_type}/{entity_id}",
             headers=await self._build_headers(auth),
             params=params if params else None,
@@ -2140,7 +2196,7 @@ class TrackerClient(
         auth: YandexAuth | None = None,
     ) -> list[ProjectLegacy]:
         params = {"perPage": per_page, "page": page}
-        async with self._session.get(
+        async with self._get(
             "v2/projects",
             headers=await self._build_headers(auth),
             params=params,
@@ -2173,7 +2229,7 @@ class TrackerClient(
     async def dashboard_get(
         self, dashboard_id: str, *, auth: YandexAuth | None = None
     ) -> Dashboard:
-        async with self._session.get(
+        async with self._get(
             f"v3/dashboards/{dashboard_id}",
             headers=await self._build_headers(auth),
         ) as response:
@@ -2186,7 +2242,7 @@ class TrackerClient(
     ) -> list[DashboardWidget]:
         # Tracker has no dedicated /widgets endpoint — widgets are embedded
         # in the dashboard body. We fetch the dashboard and extract them.
-        async with self._session.get(
+        async with self._get(
             f"v3/dashboards/{dashboard_id}",
             headers=await self._build_headers(auth),
         ) as response:
@@ -2254,7 +2310,7 @@ class TrackerClient(
     async def triggers_list(
         self, queue_id: str, *, auth: YandexAuth | None = None
     ) -> list[Trigger]:
-        async with self._session.get(
+        async with self._get(
             f"v3/queues/{queue_id}/triggers",
             headers=await self._build_headers(auth),
         ) as response:
@@ -2269,7 +2325,7 @@ class TrackerClient(
         *,
         auth: YandexAuth | None = None,
     ) -> Trigger:
-        async with self._session.get(
+        async with self._get(
             f"v3/queues/{queue_id}/triggers/{trigger_id}",
             headers=await self._build_headers(auth),
         ) as response:
@@ -2339,7 +2395,7 @@ class TrackerClient(
     async def autoactions_list(
         self, queue_id: str, *, auth: YandexAuth | None = None
     ) -> list[Autoaction]:
-        async with self._session.get(
+        async with self._get(
             f"v3/queues/{queue_id}/autoactions",
             headers=await self._build_headers(auth),
         ) as response:
@@ -2354,7 +2410,7 @@ class TrackerClient(
         *,
         auth: YandexAuth | None = None,
     ) -> Autoaction:
-        async with self._session.get(
+        async with self._get(
             f"v3/queues/{queue_id}/autoactions/{action_id}",
             headers=await self._build_headers(auth),
         ) as response:
@@ -2429,7 +2485,7 @@ class TrackerClient(
     async def macros_list(
         self, queue_id: str, *, auth: YandexAuth | None = None
     ) -> list[Macro]:
-        async with self._session.get(
+        async with self._get(
             f"v3/queues/{queue_id}/macros",
             headers=await self._build_headers(auth),
         ) as response:
@@ -2444,7 +2500,7 @@ class TrackerClient(
         *,
         auth: YandexAuth | None = None,
     ) -> Macro:
-        async with self._session.get(
+        async with self._get(
             f"v3/queues/{queue_id}/macros/{macro_id}",
             headers=await self._build_headers(auth),
         ) as response:
@@ -2511,7 +2567,7 @@ class TrackerClient(
                 await _raise_tracker_error(response)
 
     async def workflows_list(self, *, auth: YandexAuth | None = None) -> list[Workflow]:
-        async with self._session.get(
+        async with self._get(
             "v3/workflows", headers=await self._build_headers(auth)
         ) as response:
             if response.status >= 400:
@@ -2549,7 +2605,7 @@ class TrackerClient(
         if notify is not None:
             body["notify"] = notify
         async with self._session.post(
-            "v2/bulkchange/_update",
+            "v3/bulkchange/_update",
             headers=await self._build_headers(auth),
             json=body,
         ) as response:
@@ -2579,7 +2635,7 @@ class TrackerClient(
             for k, v in extra.items():
                 body.setdefault(k, v)
         async with self._session.post(
-            "v2/bulkchange/_move",
+            "v3/bulkchange/_move",
             headers=await self._build_headers(auth),
             json=body,
         ) as response:
@@ -2600,12 +2656,15 @@ class TrackerClient(
         body: dict[str, Any] = {"issues": issues, "transition": transition}
         if comment is not None:
             body["comment"] = comment
+        # Per the API, `resolution` (like any other field changed alongside the
+        # transition) belongs inside `values`, not at the top level of the body.
+        values: dict[str, Any] = dict(fields) if fields else {}
         if resolution is not None:
-            body["resolution"] = resolution
-        if fields is not None:
-            body["values"] = fields
+            values.setdefault("resolution", resolution)
+        if values:
+            body["values"] = values
         async with self._session.post(
-            "v2/bulkchange/_transition",
+            "v3/bulkchange/_transition",
             headers=await self._build_headers(auth),
             json=body,
         ) as response:
@@ -2616,8 +2675,8 @@ class TrackerClient(
     async def bulk_status_get(
         self, operation_id: str, *, auth: YandexAuth | None = None
     ) -> BulkChangeResult:
-        async with self._session.get(
-            f"v2/bulkchange/{operation_id}",
+        async with self._get(
+            f"v3/bulkchange/{operation_id}",
             headers=await self._build_headers(auth),
         ) as response:
             if response.status >= 400:

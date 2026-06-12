@@ -26,12 +26,33 @@ class TestUsersList:
 
 
 class TestUsersSearch:
+    async def test_direct_login_lookup_short_circuits(
+        self,
+        client_session: ClientSession,
+        mock_users_protocol: AsyncMock,
+        sample_users: list[User],
+    ) -> None:
+        mock_users_protocol.user_get.return_value = sample_users[0]
+
+        result = await client_session.call_tool(
+            "users",
+            {"action": "search", "query": sample_users[0].login},
+        )
+
+        assert not result.isError
+        content = get_tool_result_content(result)
+        assert len(content["users"]) == 1
+        assert content["users"][0]["login"] == sample_users[0].login
+        # No org-wide paging when the login resolves directly.
+        mock_users_protocol.users_list.assert_not_called()
+
     async def test_exact_login_match(
         self,
         client_session: ClientSession,
         mock_users_protocol: AsyncMock,
         sample_users: list[User],
     ) -> None:
+        mock_users_protocol.user_get.return_value = None
         mock_users_protocol.users_list.side_effect = [sample_users, []]
 
         result = await client_session.call_tool(
@@ -50,6 +71,7 @@ class TestUsersSearch:
         mock_users_protocol: AsyncMock,
         sample_users: list[User],
     ) -> None:
+        mock_users_protocol.user_get.return_value = None
         mock_users_protocol.users_list.side_effect = [sample_users, []]
 
         result = await client_session.call_tool(

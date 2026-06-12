@@ -199,6 +199,42 @@ class TestIssueLinks:
         content = get_tool_result_content(result)
         assert content == {"ok": True}
 
+    async def test_add_with_invalid_relationship_rejected(
+        self,
+        client_session: ClientSession,
+        mock_issues_protocol: AsyncMock,
+    ) -> None:
+        result = await client_session.call_tool(
+            "issue_links",
+            {
+                "action": "add",
+                "issue_id": "TEST-1",
+                "relationship": "blocks",  # not a valid API relationship
+                "target_issue": "TEST-2",
+            },
+        )
+
+        assert result.isError
+        mock_issues_protocol.issue_add_link.assert_not_called()
+
+    async def test_add_to_restricted_target_blocked(
+        self,
+        client_session_with_limits: ClientSession,
+        mock_issues_protocol: AsyncMock,
+    ) -> None:
+        result = await client_session_with_limits.call_tool(
+            "issue_links",
+            {
+                "action": "add",
+                "issue_id": "ALLOWED-1",
+                "relationship": "relates",
+                "target_issue": "RESTRICTED-2",
+            },
+        )
+
+        assert result.isError
+        mock_issues_protocol.issue_add_link.assert_not_called()
+
 
 # ─── issue_worklogs ────────────────────────────────────────────────
 

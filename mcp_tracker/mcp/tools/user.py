@@ -66,6 +66,12 @@ def register_user_tools(_settings: Settings, mcp: FastMCP[Any]) -> None:
                 raise ValueError("`query` is required for action `search`.")
             needle = query.strip().lower()
 
+            # Logins resolve directly via user_get — one request instead of
+            # paging through the whole organization.
+            direct = await users_proto.user_get(needle, auth=auth)
+            if direct is not None:
+                return {"users": _dump([direct])}
+
             search_per_page = 100
             current = 1
             all_users: list[User] = []

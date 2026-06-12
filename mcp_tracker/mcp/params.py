@@ -17,6 +17,7 @@ PerPageParam = Annotated[
         "If there is a change in per_page argument - retrieval must be started over with page = 1, "
         "as the paging could have changed.",
         ge=1,
+        le=1000,
     ),
 ]
 

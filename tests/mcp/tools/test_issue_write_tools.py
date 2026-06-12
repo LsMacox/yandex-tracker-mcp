@@ -173,6 +173,26 @@ class TestIssueUpdate:
         call_kwargs = mock_issues_protocol.issue_update.call_args.kwargs
         assert call_kwargs["version"] == 5
 
+    async def test_no_version_prefetch_without_explicit_version(
+        self,
+        client_session: ClientSession,
+        mock_issues_protocol: AsyncMock,
+        sample_issue: Issue,
+    ) -> None:
+        # Version is optional locking — no issue_get round-trip (a cached
+        # pre-fetch used to cause spurious 409 conflicts).
+        mock_issues_protocol.issue_update.return_value = sample_issue
+
+        result = await client_session.call_tool(
+            "issue_update",
+            {"issue_id": "TEST-123", "summary": "Updated summary"},
+        )
+
+        assert not result.isError
+        mock_issues_protocol.issue_get.assert_not_called()
+        call_kwargs = mock_issues_protocol.issue_update.call_args.kwargs
+        assert call_kwargs["version"] is None
+
     async def test_restricted_queue_raises_error(
         self,
         client_session_with_limits: ClientSession,
