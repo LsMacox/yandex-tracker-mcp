@@ -17,6 +17,8 @@
       "command": "uv",
       "args": [
         "run",
+        "--python",
+        "3.12",
         "yandex-tracker-mcp"
       ],
       "env": {
