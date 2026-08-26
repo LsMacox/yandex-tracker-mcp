@@ -1805,6 +1805,27 @@ class TrackerClient(
                 await _raise_tracker_error(response)
             return Sprint.model_validate_json(await response.read())
 
+    async def _sprint_patch(
+        self,
+        sprint_id: str | int,
+        *,
+        fields: dict[str, Any],
+        auth: YandexAuth | None = None,
+    ) -> Sprint:
+        # Sprint PATCH requires optimistic locking: without a `version` query
+        # parameter (or If-Match header) Tracker responds 428. Fetch the current
+        # version first so callers don't have to track it.
+        current = await self.sprint_get(str(sprint_id), auth=auth)
+        async with self._session.patch(
+            f"v3/sprints/{sprint_id}",
+            params={"version": str(current.version or 1)},
+            headers=await self._build_headers(auth),
+            json=fields,
+        ) as response:
+            if response.status >= 400:
+                await _raise_tracker_error(response)
+            return Sprint.model_validate_json(await response.read())
+
     async def sprint_update(
         self,
         sprint_id: str | int,
@@ -1812,14 +1833,7 @@ class TrackerClient(
         fields: dict[str, Any],
         auth: YandexAuth | None = None,
     ) -> Sprint:
-        async with self._session.patch(
-            f"v3/sprints/{sprint_id}",
-            headers=await self._build_headers(auth),
-            json=fields,
-        ) as response:
-            if response.status >= 400:
-                await _raise_tracker_error(response)
-            return Sprint.model_validate_json(await response.read())
+        return await self._sprint_patch(sprint_id, fields=fields, auth=auth)
 
     async def sprint_delete(
         self,
@@ -1840,14 +1854,12 @@ class TrackerClient(
         *,
         auth: YandexAuth | None = None,
     ) -> Sprint:
-        async with self._session.post(
-            f"v3/sprints/{sprint_id}/_start",
-            headers=await self._build_headers(auth),
-            json={},
-        ) as response:
-            if response.status >= 400:
-                await _raise_tracker_error(response)
-            return Sprint.model_validate_json(await response.read())
+        # Tracker has no `_start`/`_finish` sprint endpoints (both 404 with
+        # "Requested action not found") — the lifecycle is switched by PATCHing
+        # the `status` field: draft -> in_progress -> archived.
+        return await self._sprint_patch(
+            sprint_id, fields={"status": "in_progress"}, auth=auth
+        )
 
     async def sprint_finish(
         self,
@@ -1855,14 +1867,11 @@ class TrackerClient(
         *,
         auth: YandexAuth | None = None,
     ) -> Sprint:
-        async with self._session.post(
-            f"v3/sprints/{sprint_id}/_finish",
-            headers=await self._build_headers(auth),
-            json={},
-        ) as response:
-            if response.status >= 400:
-                await _raise_tracker_error(response)
-            return Sprint.model_validate_json(await response.read())
+        # See sprint_start: finishing a sprint means PATCHing status=archived
+        # (matches what the board UI produces for past sprints).
+        return await self._sprint_patch(
+            sprint_id, fields={"status": "archived"}, auth=auth
+        )
 
     # --- filters ---
     async def filters_list(
